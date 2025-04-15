@@ -2,12 +2,12 @@
 let currentRoom = null;
 let username = null;
 let connections = {};
+let peers = {};
 let videoSyncStatus = {
     isPlaying: false,
     currentTime: 0,
     videoUrl: ''
 };
-let socket; // Add WebSocket connection
 
 // Initialize when page loads
 document.addEventListener('DOMContentLoaded', () => {
@@ -31,7 +31,7 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('toggle-user-list').addEventListener('click', toggleUserList);
     
     // Set up user list toggle
-    document.getElementById('show-users').addEventListener('click', toggleUserList);
+    document.getElementById('toggle-user-list').addEventListener('click', toggleUserList);
     
     // Allow users to set their username
     const usernameInput = document.getElementById('username-input');
@@ -102,8 +102,8 @@ function createRoom() {
     // Add system message
     addSystemMessage(`Room "${roomName}" created. Share the link with friends!`);
     
-    // Initialize WebSocket connection
-    initializeRoomConnection();
+    // Initialize room connection using PeerJS
+    initializePeerConnection(true);
 }
 
 // Join an existing room
@@ -126,10 +126,220 @@ function joinRoom() {
     document.getElementById('room-modal').style.display = 'none';
     
     // Add system message
-    addSystemMessage(`Joined room "${currentRoom}"`);
+    addSystemMessage(`Joining room "${currentRoom}"...`);
     
-    // Initialize WebSocket connection
-    initializeRoomConnection();
+    // Initialize room connection using PeerJS
+    initializePeerConnection(false);
+}
+
+// Initialize peer connection
+function initializePeerConnection(isHost) {
+    // Load PeerJS from CDN if not already loaded
+    if (!window.Peer) {
+        const script = document.createElement('script');
+        script.src = 'https://unpkg.com/peerjs@1.4.7/dist/peerjs.min.js';
+        script.onload = () => setupPeer(isHost);
+        document.head.appendChild(script);
+        return;
+    }
+    
+    setupPeer(isHost);
+}
+
+// Set up PeerJS connection
+function setupPeer(isHost) {
+    // Create a unique peer ID using room and username
+    const peerId = `${currentRoom}_${username}_${Math.random().toString(36).substr(2, 9)}`;
+    
+    addSystemMessage("Connecting to signaling server...");
+    
+    // Connect to PeerJS public server or specify your own
+    const peer = new Peer(peerId, {
+        debug: 2
+    });
+    
+    // Handle connection open
+    peer.on('open', id => {
+        addSystemMessage("Connected to signaling server!");
+        
+        // Store peer ID
+        connections[username] = { peerId: id };
+        
+        // If joining an existing room, try to connect to the host
+        if (!isHost) {
+            connectToRoomHost();
+        } else {
+            updateUserCount();
+            updateUserListUI();
+        }
+    });
+    
+    // Handle incoming connections
+    peer.on('connection', conn => {
+        // Incoming connection from peer
+        setUpConnection(conn);
+    });
+    
+    // Handle errors
+    peer.on('error', error => {
+        console.error('PeerJS error:', error);
+        addSystemMessage("Connection error: " + error.type);
+    });
+    
+    // Save peer object
+    window.myPeer = peer;
+    
+    // Function to connect to room host
+    function connectToRoomHost() {
+        // In this simplified version, we'll try connecting to any peer by broadcasting
+        broadcastRoomPresence();
+    }
+    
+    // Broadcast presence in the room
+    function broadcastRoomPresence() {
+        addSystemMessage("Looking for other users in the room...");
+        
+        // Create a special ID for room presence
+        const presenceId = `${currentRoom}_presence`;
+        
+        // Connect to presence channel
+        const conn = peer.connect(presenceId, { reliable: true, metadata: { username, peerId: peer.id } });
+        
+        conn.on('open', () => {
+            // Successfully connected to presence channel
+            conn.send({
+                type: 'roomJoin',
+                username,
+                peerId: peer.id,
+                videoState: videoSyncStatus
+            });
+        });
+        
+        conn.on('error', () => {
+            // Failed to connect to presence - likely first one in the room or host offline
+            addSystemMessage("You're the first one here or host is offline. Waiting for others to join.");
+            
+            // Act as host now
+            listenForRoomPresence();
+        });
+    }
+    
+    // Listen for other peers trying to join the room
+    function listenForRoomPresence() {
+        // Create a special peer for room presence
+        const presenceId = `${currentRoom}_presence`;
+        
+        // Try to become the presence host
+        const presencePeer = new Peer(presenceId, {
+            debug: 2
+        });
+        
+        presencePeer.on('open', () => {
+            addSystemMessage("Became host for the room.");
+            
+            // Listen for connections
+            presencePeer.on('connection', conn => {
+                // New peer joining the room
+                conn.on('data', data => {
+                    if (data.type === 'roomJoin') {
+                        // Connect to the new peer
+                        const newConn = peer.connect(data.peerId, { reliable: true });
+                        setUpConnection(newConn);
+                        
+                        // Connect the new peer to existing peers (mesh network)
+                        // In a full implementation, inform all existing peers about the new one
+                    }
+                });
+            });
+        });
+        
+        presencePeer.on('error', error => {
+            if (error.type === 'unavailable-id') {
+                // Someone else is already hosting
+                addSystemMessage("Connected to room. Looking for host...");
+                
+                // Try to connect directly to peers in the room
+                tryDirectConnection();
+            } else {
+                console.error('Presence peer error:', error);
+            }
+        });
+        
+        window.presencePeer = presencePeer;
+    }
+    
+    // Try direct connections to peers that might be in the room
+    function tryDirectConnection() {
+        // In a real implementation, you would need some way to discover peers
+        // For now, we'll wait for host to connect to us
+        addSystemMessage("Waiting for host to establish connection...");
+    }
+}
+
+// Set up data connection with a peer
+function setUpConnection(conn) {
+    conn.on('open', () => {
+        // New peer connected
+        const peerInfo = conn.metadata || { username: 'Unknown User' };
+        
+        // Store connection
+        peers[peerInfo.username] = conn;
+        connections[peerInfo.username] = { peerId: conn.peer };
+        
+        addSystemMessage(`${peerInfo.username} joined the room`);
+        updateUserCount();
+        updateUserListUI();
+        
+        // Send current state to new peer
+        conn.send({
+            type: 'videoState',
+            state: videoSyncStatus
+        });
+        
+        // Also send user list
+        conn.send({
+            type: 'userList',
+            users: Object.keys(connections)
+        });
+    });
+    
+    conn.on('data', data => {
+        // Handle incoming data
+        switch(data.type) {
+            case 'videoState':
+                videoSyncStatus = data.state;
+                applyVideoState(data.state);
+                break;
+                
+            case 'chatMessage':
+                addUserMessage(data.message, data.username, false);
+                break;
+                
+            case 'userList':
+                // Update our user list
+                data.users.forEach(user => {
+                    if (!connections[user]) {
+                        connections[user] = { peerId: null };
+                    }
+                });
+                updateUserCount();
+                updateUserListUI();
+                break;
+        }
+    });
+    
+    conn.on('close', () => {
+        // Peer disconnected
+        const disconnectedUser = Object.keys(peers).find(user => peers[user] === conn);
+        if (disconnectedUser) {
+            delete peers[disconnectedUser];
+            delete connections[disconnectedUser];
+            
+            addSystemMessage(`${disconnectedUser} left the room`);
+            updateUserCount();
+            updateUserListUI();
+        }
+    });
 }
 
 // Load a video from URL
@@ -237,7 +447,7 @@ function sendChatMessage() {
     // Add message to chat
     addUserMessage(message, username, true);
     
-    // In a real app, broadcast to all users
+    // Broadcast to all users
     if (currentRoom) {
         broadcastChatMessage(message);
     }
@@ -288,71 +498,8 @@ function copyRoomLink() {
     });
 }
 
-// Initialize connections when joining or creating a room
-function initializeRoomConnection() {
-    addSystemMessage("Connecting to server...");
-    
-    // Connect to WebSocket server
-    socket = new WebSocket('wss://your-websocket-server.com'); // Replace with your WebSocket server URL
-    
-    socket.onopen = () => {
-        addSystemMessage("Connected to server!");
-        
-        // Join the room
-        socket.send(JSON.stringify({
-            type: 'join',
-            room: currentRoom,
-            username: username
-        }));
-    };
-    
-    socket.onmessage = (event) => {
-        const data = JSON.parse(event.data);
-        
-        switch(data.type) {
-            case 'userJoined':
-                updateUserStatus(data.username, true);
-                break;
-                
-            case 'userLeft':
-                updateUserStatus(data.username, false);
-                break;
-                
-            case 'videoState':
-                videoSyncStatus = data.state;
-                applyVideoState(data.state);
-                break;
-                
-            case 'chatMessage':
-                addUserMessage(data.message, data.username, data.username === username);
-                break;
-                
-            case 'requestVideoState':
-                if (data.username !== username) {
-                    // Send current video state to new user
-                    broadcastVideoState();
-                }
-                break;
-        }
-    };
-    
-    socket.onclose = () => {
-        addSystemMessage("Disconnected from server. Trying to reconnect...");
-        
-        // Try to reconnect after a delay
-        setTimeout(initializeRoomConnection, 3000);
-    };
-    
-    socket.onerror = (error) => {
-        console.error("WebSocket error:", error);
-        addSystemMessage("Connection error. Please try again later.");
-    };
-}
-
-// Simulate broadcasting video state to all users
+// Broadcast video state to all peers
 function broadcastVideoState() {
-    if (!socket || socket.readyState !== WebSocket.OPEN) return;
-    
     // Get current video state
     const videoPlayer = document.getElementById('video-player');
     if (videoPlayer) {
@@ -360,36 +507,29 @@ function broadcastVideoState() {
         videoSyncStatus.currentTime = videoPlayer.currentTime;
     }
     
-    // Send to server
-    socket.send(JSON.stringify({
-        type: 'videoState',
-        room: currentRoom,
-        username: username,
-        state: videoSyncStatus
-    }));
+    // Send to all connected peers
+    Object.values(peers).forEach(conn => {
+        if (conn.open) {
+            conn.send({
+                type: 'videoState',
+                state: videoSyncStatus
+            });
+        }
+    });
 }
 
-// Simulate broadcasting chat message to all users
+// Broadcast chat message to all peers
 function broadcastChatMessage(message) {
-    if (!socket || socket.readyState !== WebSocket.OPEN) return;
-    
-    socket.send(JSON.stringify({
-        type: 'chatMessage',
-        room: currentRoom,
-        username: username,
-        message: message
-    }));
-}
-
-// Request current video state from peers
-function requestVideoState() {
-    if (!socket || socket.readyState !== WebSocket.OPEN) return;
-    
-    socket.send(JSON.stringify({
-        type: 'requestVideoState',
-        room: currentRoom,
-        username: username
-    }));
+    // Send to all connected peers
+    Object.values(peers).forEach(conn => {
+        if (conn.open) {
+            conn.send({
+                type: 'chatMessage',
+                username: username,
+                message: message
+            });
+        }
+    });
 }
 
 // Apply received video state
@@ -459,23 +599,9 @@ function applyVideoState(state) {
     }
 }
 
-// Handle user joining/leaving
-function updateUserStatus(user, isJoining) {
-    if (isJoining) {
-        connections[user] = true;
-        addSystemMessage(`${user} joined the room`);
-    } else {
-        delete connections[user];
-        addSystemMessage(`${user} left the room`);
-    }
-    
-    // Update user count display
-    updateUserCount();
-}
-
 // Update user count display
 function updateUserCount() {
-    const userCount = Object.keys(connections).length + 1; // +1 for current user
+    const userCount = Object.keys(connections).length;
     document.getElementById('user-count').textContent = userCount;
 }
 
@@ -502,9 +628,11 @@ function updateUserListUI() {
     
     // Add other connected users
     Object.keys(connections).forEach(user => {
-        const userItem = document.createElement('div');
-        userItem.className = 'user-item';
-        userItem.textContent = user;
-        userList.appendChild(userItem);
+        if (user !== username) {
+            const userItem = document.createElement('div');
+            userItem.className = 'user-item';
+            userItem.textContent = user;
+            userList.appendChild(userItem);
+        }
     });
 }
