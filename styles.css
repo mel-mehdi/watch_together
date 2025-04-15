@@ -204,3 +204,40 @@ main {
 .or-divider::after {
     right: 0;
 }
+
+.user-list-panel {
+    position: absolute;
+    right: 20px;
+    top: 70px;
+    background-color: #1e1e1e;
+    border-radius: 8px;
+    padding: 15px;
+    width: 200px;
+    box-shadow: 0 0 10px rgba(0, 0, 0, 0.5);
+    z-index: 100;
+    display: none;
+}
+
+.user-list-panel.show {
+    display: block;
+}
+
+.user-item {
+    padding: 8px;
+    border-radius: 4px;
+    margin-bottom: 5px;
+}
+
+.current-user {
+    background-color: #333;
+}
+
+#username-input {
+    padding: 5px;
+    border-radius: 4px;
+    border: 1px solid #333;
+    background-color: #2a2a2a;
+    color: white;
+    margin-right: 10px;
+    width: 120px;
+}

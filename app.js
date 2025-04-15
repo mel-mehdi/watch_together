@@ -7,6 +7,7 @@ let videoSyncStatus = {
     currentTime: 0,
     videoUrl: ''
 };
+let socket; // Add WebSocket connection
 
 // Initialize when page loads
 document.addEventListener('DOMContentLoaded', () => {
@@ -50,6 +51,7 @@ document.addEventListener('DOMContentLoaded', () => {
     
     // Get username
     username = 'User_' + Math.floor(Math.random() * 1000);
+    document.getElementById('username-input').value = username;
     
     // Set up video player events
     const videoPlayer = document.getElementById('video-player');
@@ -100,7 +102,7 @@ function createRoom() {
     // Add system message
     addSystemMessage(`Room "${roomName}" created. Share the link with friends!`);
     
-    // In a real app, this would set up WebRTC/WebSocket connections
+    // Initialize WebSocket connection
     initializeRoomConnection();
 }
 
@@ -126,7 +128,7 @@ function joinRoom() {
     // Add system message
     addSystemMessage(`Joined room "${currentRoom}"`);
     
-    // In a real app, this would connect to existing WebRTC/WebSocket room
+    // Initialize WebSocket connection
     initializeRoomConnection();
 }
 
@@ -158,21 +160,66 @@ function loadVideo() {
             iframe.src = `https://www.youtube.com/embed/${videoId}?enablejsapi=1`;
             iframe.allow = 'accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture';
             iframe.allowFullscreen = true;
+            iframe.id = 'youtube-player';
             
             // Replace video element with iframe
-            videoPlayer.parentNode.replaceChild(iframe, videoPlayer);
+            const videoWrapper = document.querySelector('.video-wrapper');
+            if (videoPlayer.parentNode === videoWrapper) {
+                videoWrapper.replaceChild(iframe, videoPlayer);
+            }
             
             // In a real app, you would use the YouTube API for better control
             addSystemMessage(`YouTube video loaded`);
+            
+            // Store YouTube video ID for syncing
+            videoSyncStatus.videoUrl = `youtube:${videoId}`;
         }
     } else {
         // For direct video URLs
-        videoPlayer.src = videoUrl;
-        videoPlayer.load();
+        // Ensure we have a video element
+        let videoElement = document.getElementById('video-player');
+        if (!videoElement) {
+            videoElement = document.createElement('video');
+            videoElement.id = 'video-player';
+            videoElement.controls = true;
+            
+            const youtubePlayer = document.getElementById('youtube-player');
+            if (youtubePlayer) {
+                youtubePlayer.parentNode.replaceChild(videoElement, youtubePlayer);
+            }
+            
+            // Re-add event listeners
+            videoElement.addEventListener('play', () => {
+                if (currentRoom) {
+                    videoSyncStatus.isPlaying = true;
+                    videoSyncStatus.currentTime = videoElement.currentTime;
+                    broadcastVideoState();
+                }
+            });
+            
+            videoElement.addEventListener('pause', () => {
+                if (currentRoom) {
+                    videoSyncStatus.isPlaying = false;
+                    videoSyncStatus.currentTime = videoElement.currentTime;
+                    broadcastVideoState();
+                }
+            });
+            
+            videoElement.addEventListener('seeked', () => {
+                if (currentRoom) {
+                    videoSyncStatus.currentTime = videoElement.currentTime;
+                    broadcastVideoState();
+                }
+            });
+        }
+        
+        videoElement.src = videoUrl;
+        videoElement.load();
         addSystemMessage(`Video loaded: ${videoUrl}`);
+        
+        // Store direct video URL for syncing
+        videoSyncStatus.videoUrl = videoUrl;
     }
-    
-    videoSyncStatus.videoUrl = videoUrl;
     
     // Broadcast to all users in room
     if (currentRoom) {
@@ -243,65 +290,159 @@ function copyRoomLink() {
 
 // Initialize connections when joining or creating a room
 function initializeRoomConnection() {
-    // In a real app, you'd set up actual WebRTC or WebSocket connections
-    // For this demo, we'll simulate connections with setTimeout
+    addSystemMessage("Connecting to server...");
     
-    addSystemMessage("Connecting to other participants...");
+    // Connect to WebSocket server
+    socket = new WebSocket('wss://your-websocket-server.com'); // Replace with your WebSocket server URL
     
-    setTimeout(() => {
-        addSystemMessage("Connected! Synchronizing video playback...");
+    socket.onopen = () => {
+        addSystemMessage("Connected to server!");
         
-        // Request current video state
-        if (currentRoom) {
-            requestVideoState();
+        // Join the room
+        socket.send(JSON.stringify({
+            type: 'join',
+            room: currentRoom,
+            username: username
+        }));
+    };
+    
+    socket.onmessage = (event) => {
+        const data = JSON.parse(event.data);
+        
+        switch(data.type) {
+            case 'userJoined':
+                updateUserStatus(data.username, true);
+                break;
+                
+            case 'userLeft':
+                updateUserStatus(data.username, false);
+                break;
+                
+            case 'videoState':
+                videoSyncStatus = data.state;
+                applyVideoState(data.state);
+                break;
+                
+            case 'chatMessage':
+                addUserMessage(data.message, data.username, data.username === username);
+                break;
+                
+            case 'requestVideoState':
+                if (data.username !== username) {
+                    // Send current video state to new user
+                    broadcastVideoState();
+                }
+                break;
         }
-    }, 1500);
+    };
+    
+    socket.onclose = () => {
+        addSystemMessage("Disconnected from server. Trying to reconnect...");
+        
+        // Try to reconnect after a delay
+        setTimeout(initializeRoomConnection, 3000);
+    };
+    
+    socket.onerror = (error) => {
+        console.error("WebSocket error:", error);
+        addSystemMessage("Connection error. Please try again later.");
+    };
 }
 
 // Simulate broadcasting video state to all users
 function broadcastVideoState() {
-    // In a real app, send this data through WebRTC/WebSocket
-    console.log("Broadcasting video state:", videoSyncStatus);
+    if (!socket || socket.readyState !== WebSocket.OPEN) return;
     
-    // For demo, simulate receiving our own broadcast
-    addSystemMessage("Video state updated and synchronized with others");
+    // Get current video state
+    const videoPlayer = document.getElementById('video-player');
+    if (videoPlayer) {
+        videoSyncStatus.isPlaying = !videoPlayer.paused;
+        videoSyncStatus.currentTime = videoPlayer.currentTime;
+    }
+    
+    // Send to server
+    socket.send(JSON.stringify({
+        type: 'videoState',
+        room: currentRoom,
+        username: username,
+        state: videoSyncStatus
+    }));
 }
 
 // Simulate broadcasting chat message to all users
 function broadcastChatMessage(message) {
-    // In a real app, send this through WebRTC/WebSocket
-    console.log("Broadcasting message:", message);
+    if (!socket || socket.readyState !== WebSocket.OPEN) return;
     
-    // For demo, simulate receiving our own broadcast
-    // In a real app, we wouldn't need this as the server would broadcast to others
+    socket.send(JSON.stringify({
+        type: 'chatMessage',
+        room: currentRoom,
+        username: username,
+        message: message
+    }));
 }
 
 // Request current video state from peers
 function requestVideoState() {
-    // In a real app, request current state from server or peers
-    console.log("Requesting current video state");
+    if (!socket || socket.readyState !== WebSocket.OPEN) return;
     
-    // For demo, simulate receiving video state after a short delay
-    setTimeout(() => {
-        if (videoSyncStatus.videoUrl) {
-            // Apply received video state
-            applyVideoState(videoSyncStatus);
-        }
-    }, 1000);
+    socket.send(JSON.stringify({
+        type: 'requestVideoState',
+        room: currentRoom,
+        username: username
+    }));
 }
 
 // Apply received video state
 function applyVideoState(state) {
-    const videoContainer = document.querySelector('.video-wrapper');
-    const existingVideo = document.getElementById('video-player');
+    // If there's no video URL yet, nothing to sync
+    if (!state.videoUrl) return;
     
-    // If video URL changed, load the new video
-    if (state.videoUrl && state.videoUrl !== videoSyncStatus.videoUrl) {
-        document.getElementById('video-url').value = state.videoUrl;
+    // If video URL changed or hasn't been loaded yet, load the new video
+    if (state.videoUrl !== videoSyncStatus.videoUrl) {
+        document.getElementById('video-url').value = 
+            state.videoUrl.startsWith('youtube:') ? 
+            `https://youtu.be/${state.videoUrl.split(':')[1]}` : 
+            state.videoUrl;
+            
         loadVideo();
+        return; // Loading the video will trigger another sync
     }
     
-    // Sync play/pause state and current time
+    // Handle YouTube videos
+    if (state.videoUrl.startsWith('youtube:')) {
+        const youtubePlayer = document.getElementById('youtube-player');
+        if (youtubePlayer && youtubePlayer.contentWindow) {
+            try {
+                // Using YouTube iframe API postMessage
+                if (Math.abs(state.currentTime - youtubePlayer.getCurrentTime) > 1) {
+                    youtubePlayer.contentWindow.postMessage(JSON.stringify({
+                        event: 'command',
+                        func: 'seekTo',
+                        args: [state.currentTime, true]
+                    }), '*');
+                }
+                
+                if (state.isPlaying) {
+                    youtubePlayer.contentWindow.postMessage(JSON.stringify({
+                        event: 'command',
+                        func: 'playVideo',
+                        args: []
+                    }), '*');
+                } else {
+                    youtubePlayer.contentWindow.postMessage(JSON.stringify({
+                        event: 'command',
+                        func: 'pauseVideo',
+                        args: []
+                    }), '*');
+                }
+            } catch (e) {
+                console.error("YouTube API error:", e);
+            }
+        }
+        return;
+    }
+    
+    // Handle regular video element
     const videoElement = document.getElementById('video-player');
     if (videoElement) {
         // Update time if difference is more than 1 second
@@ -311,7 +452,7 @@ function applyVideoState(state) {
         
         // Update play/pause state
         if (state.isPlaying && videoElement.paused) {
-            videoElement.play();
+            videoElement.play().catch(e => console.error("Error playing video:", e));
         } else if (!state.isPlaying && !videoElement.paused) {
             videoElement.pause();
         }

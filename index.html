@@ -1,4 +1,3 @@
-// filepath: index.html
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -13,9 +12,11 @@
         <header>
             <h1>Watch Together</h1>
             <div class="room-info">
+                <input type="text" id="username-input" placeholder="Your name">
                 <span>Room: </span>
                 <span id="room-id">Create or Join a Room</span>
                 <button id="copy-link"><i class="fas fa-copy"></i> Copy Link</button>
+                <button id="toggle-user-list"><i class="fas fa-users"></i> <span id="user-count">0</span></button>
             </div>
         </header>
         
@@ -56,6 +57,11 @@
                     <button id="join-room">Join Room</button>
                 </div>
             </div>
+        </div>
+        
+        <div id="user-list-panel" class="user-list-panel">
+            <h3>Users in Room</h3>
+            <div id="user-list"></div>
         </div>
     </div>
     
