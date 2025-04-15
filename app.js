@@ -8,6 +8,7 @@ let videoSyncStatus = {
     currentTime: 0,
     videoUrl: ''
 };
+let peer; // Store peer instance globally
 
 // Initialize when page loads
 document.addEventListener('DOMContentLoaded', () => {
@@ -30,20 +31,18 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('copy-link').addEventListener('click', copyRoomLink);
     document.getElementById('toggle-user-list').addEventListener('click', toggleUserList);
     
-    // Set up user list toggle
-    document.getElementById('toggle-user-list').addEventListener('click', toggleUserList);
-    
     // Allow users to set their username
     const usernameInput = document.getElementById('username-input');
     if (usernameInput) {
         usernameInput.addEventListener('change', () => {
             const newUsername = usernameInput.value.trim();
-            if (newUsername) {
+            if (newUsername && newUsername !== username) {
                 const oldUsername = username;
                 username = newUsername;
                 if (currentRoom) {
                     addSystemMessage(`You changed your name from ${oldUsername} to ${username}`);
-                    // In a real app, broadcast this change to other users
+                    // Tell others about username change
+                    broadcastUsernameChange(oldUsername, username);
                 }
             }
         });
@@ -77,7 +76,19 @@ document.addEventListener('DOMContentLoaded', () => {
             broadcastVideoState();
         }
     });
+
+    // Load PeerJS script early
+    loadPeerJS();
 });
+
+// Load PeerJS library
+function loadPeerJS() {
+    if (!window.Peer) {
+        const script = document.createElement('script');
+        script.src = 'https://unpkg.com/peerjs@1.4.7/dist/peerjs.min.js';
+        document.head.appendChild(script);
+    }
+}
 
 // Create a new room
 function createRoom() {
@@ -102,7 +113,7 @@ function createRoom() {
     // Add system message
     addSystemMessage(`Room "${roomName}" created. Share the link with friends!`);
     
-    // Initialize room connection using PeerJS
+    // Initialize as host
     initializePeerConnection(true);
 }
 
@@ -128,22 +139,22 @@ function joinRoom() {
     // Add system message
     addSystemMessage(`Joining room "${currentRoom}"...`);
     
-    // Initialize room connection using PeerJS
+    // Initialize as guest
     initializePeerConnection(false);
 }
 
 // Initialize peer connection
 function initializePeerConnection(isHost) {
-    // Load PeerJS from CDN if not already loaded
-    if (!window.Peer) {
-        const script = document.createElement('script');
-        script.src = 'https://unpkg.com/peerjs@1.4.7/dist/peerjs.min.js';
-        script.onload = () => setupPeer(isHost);
-        document.head.appendChild(script);
-        return;
-    }
+    // Wait for the PeerJS library to load
+    const waitForPeer = () => {
+        if (!window.Peer) {
+            setTimeout(waitForPeer, 100);
+            return;
+        }
+        setupPeer(isHost);
+    };
     
-    setupPeer(isHost);
+    waitForPeer();
 }
 
 // Set up PeerJS connection
@@ -153,9 +164,15 @@ function setupPeer(isHost) {
     
     addSystemMessage("Connecting to signaling server...");
     
-    // Connect to PeerJS public server or specify your own
-    const peer = new Peer(peerId, {
-        debug: 2
+    // Connect to PeerJS public server
+    peer = new Peer(peerId, {
+        debug: 2,
+        config: {
+            'iceServers': [
+                { urls: 'stun:stun.l.google.com:19302' },
+                { urls: 'stun:global.stun.twilio.com:3478' }
+            ]
+        }
     });
     
     // Handle connection open
@@ -163,20 +180,26 @@ function setupPeer(isHost) {
         addSystemMessage("Connected to signaling server!");
         
         // Store peer ID
-        connections[username] = { peerId: id };
+        connections[username] = { 
+            peerId: id,
+            isHost: isHost
+        };
         
-        // If joining an existing room, try to connect to the host
-        if (!isHost) {
-            connectToRoomHost();
+        updateUserCount();
+        updateUserListUI();
+        
+        if (isHost) {
+            // I'm host, just wait for connections
+            addSystemMessage("Waiting for others to join...");
         } else {
-            updateUserCount();
-            updateUserListUI();
+            // Try to connect to host or other peers
+            findPeersInRoom();
         }
     });
     
     // Handle incoming connections
     peer.on('connection', conn => {
-        // Incoming connection from peer
+        console.log("Incoming connection from:", conn.peer);
         setUpConnection(conn);
     });
     
@@ -184,127 +207,170 @@ function setupPeer(isHost) {
     peer.on('error', error => {
         console.error('PeerJS error:', error);
         addSystemMessage("Connection error: " + error.type);
+        
+        if (error.type === 'peer-unavailable') {
+            // The specific peer wasn't found, but we can still try to find others
+            if (!isHost) {
+                setTimeout(findPeersInRoom, 1000);
+            }
+        }
+    });
+}
+
+// Find peers in the current room
+function findPeersInRoom() {
+    addSystemMessage("Looking for peers in the room...");
+    
+    // Try to connect to the room host first (common prefix)
+    const roomPrefix = currentRoom + "_";
+    
+    // Use a signaling channel for peer discovery
+    // This is a simplified approach - in production, you'd use a proper signaling server
+    const discoveryChannel = new BroadcastChannel(`discovery_${currentRoom}`);
+    
+    // Announce ourselves
+    discoveryChannel.postMessage({
+        type: 'announce',
+        peerId: peer.id,
+        username: username
     });
     
-    // Save peer object
-    window.myPeer = peer;
-    
-    // Function to connect to room host
-    function connectToRoomHost() {
-        // In this simplified version, we'll try connecting to any peer by broadcasting
-        broadcastRoomPresence();
-    }
-    
-    // Broadcast presence in the room
-    function broadcastRoomPresence() {
-        addSystemMessage("Looking for other users in the room...");
+    // Listen for other peers
+    discoveryChannel.onmessage = (event) => {
+        const data = event.data;
         
-        // Create a special ID for room presence
-        const presenceId = `${currentRoom}_presence`;
-        
-        // Connect to presence channel
-        const conn = peer.connect(presenceId, { reliable: true, metadata: { username, peerId: peer.id } });
-        
-        conn.on('open', () => {
-            // Successfully connected to presence channel
-            conn.send({
-                type: 'roomJoin',
-                username,
-                peerId: peer.id,
-                videoState: videoSyncStatus
-            });
-        });
-        
-        conn.on('error', () => {
-            // Failed to connect to presence - likely first one in the room or host offline
-            addSystemMessage("You're the first one here or host is offline. Waiting for others to join.");
+        if (data.type === 'announce' && data.peerId !== peer.id) {
+            console.log("Found peer:", data.peerId);
             
-            // Act as host now
-            listenForRoomPresence();
-        });
-    }
+            // Connect to this peer
+            const conn = peer.connect(data.peerId, {
+                reliable: true,
+                metadata: {
+                    username: username,
+                    peerId: peer.id
+                }
+            });
+            
+            setUpConnection(conn);
+        }
+    };
     
-    // Listen for other peers trying to join the room
-    function listenForRoomPresence() {
-        // Create a special peer for room presence
-        const presenceId = `${currentRoom}_presence`;
+    // Keep discovery channel open
+    window.discoveryChannel = discoveryChannel;
+    
+    // Also try to directly connect to a peer by "guessing" IDs with the room prefix
+    // This is a fallback if the BroadcastChannel API is not supported
+    tryConnectToRoomPeer(roomPrefix);
+}
+
+// Try to connect to a peer in the room (fallback method)
+function tryConnectToRoomPeer(roomPrefix) {
+    // Try to connect to the room coordinator (a special role for the first peer)
+    const coordinatorId = `${roomPrefix}coordinator`;
+    
+    console.log("Trying to connect to room coordinator:", coordinatorId);
+    const conn = peer.connect(coordinatorId, {
+        reliable: true,
+        metadata: {
+            username: username,
+            peerId: peer.id
+        }
+    });
+    
+    conn.on('open', () => {
+        console.log("Connected to room coordinator!");
+        setUpConnection(conn);
+    });
+    
+    conn.on('error', err => {
+        console.log("Couldn't connect to coordinator, becoming coordinator");
         
-        // Try to become the presence host
-        const presencePeer = new Peer(presenceId, {
+        // Try to become the coordinator
+        const coordPeer = new Peer(coordinatorId, {
             debug: 2
         });
         
-        presencePeer.on('open', () => {
-            addSystemMessage("Became host for the room.");
+        coordPeer.on('open', () => {
+            console.log("Became room coordinator!");
             
             // Listen for connections
-            presencePeer.on('connection', conn => {
-                // New peer joining the room
-                conn.on('data', data => {
-                    if (data.type === 'roomJoin') {
-                        // Connect to the new peer
-                        const newConn = peer.connect(data.peerId, { reliable: true });
-                        setUpConnection(newConn);
-                        
-                        // Connect the new peer to existing peers (mesh network)
-                        // In a full implementation, inform all existing peers about the new one
-                    }
+            coordPeer.on('connection', newConn => {
+                console.log("Coordinator: New peer connecting");
+                
+                // Accept the connection
+                setUpConnection(newConn);
+                
+                // Share known peers
+                newConn.on('open', () => {
+                    newConn.send({
+                        type: 'peerList',
+                        peers: Object.values(connections)
+                            .filter(c => c.peerId !== newConn.peer)
+                            .map(c => ({
+                                username: c.username,
+                                peerId: c.peerId
+                            }))
+                    });
                 });
             });
         });
         
-        presencePeer.on('error', error => {
-            if (error.type === 'unavailable-id') {
-                // Someone else is already hosting
-                addSystemMessage("Connected to room. Looking for host...");
-                
-                // Try to connect directly to peers in the room
-                tryDirectConnection();
-            } else {
-                console.error('Presence peer error:', error);
-            }
+        coordPeer.on('error', error => {
+            // Someone else is already coordinator
+            console.log("Someone else is coordinator, waiting for connections");
         });
         
-        window.presencePeer = presencePeer;
-    }
-    
-    // Try direct connections to peers that might be in the room
-    function tryDirectConnection() {
-        // In a real implementation, you would need some way to discover peers
-        // For now, we'll wait for host to connect to us
-        addSystemMessage("Waiting for host to establish connection...");
-    }
+        window.coordPeer = coordPeer;
+    });
 }
 
 // Set up data connection with a peer
 function setUpConnection(conn) {
+    // Handle connection opening
     conn.on('open', () => {
-        // New peer connected
+        console.log("Connection opened with", conn.peer);
+        
+        // Get peer info
         const peerInfo = conn.metadata || { username: 'Unknown User' };
+        const peerUsername = peerInfo.username || 'Unknown User';
+        
+        // Check if already connected
+        if (peers[peerUsername] && peers[peerUsername].open) {
+            console.log("Already connected to", peerUsername);
+            return;
+        }
         
         // Store connection
-        peers[peerInfo.username] = conn;
-        connections[peerInfo.username] = { peerId: conn.peer };
+        peers[peerUsername] = conn;
+        connections[peerUsername] = { 
+            peerId: conn.peer,
+            username: peerUsername
+        };
         
-        addSystemMessage(`${peerInfo.username} joined the room`);
+        addSystemMessage(`${peerUsername} joined the room`);
         updateUserCount();
         updateUserListUI();
         
-        // Send current state to new peer
+        // Send our current state
         conn.send({
             type: 'videoState',
             state: videoSyncStatus
         });
         
-        // Also send user list
+        // Send current user list
         conn.send({
             type: 'userList',
-            users: Object.keys(connections)
+            users: Object.keys(connections).map(username => ({
+                username,
+                peerId: connections[username].peerId
+            }))
         });
     });
     
+    // Handle incoming data
     conn.on('data', data => {
-        // Handle incoming data
+        console.log("Received data:", data);
+        
         switch(data.type) {
             case 'videoState':
                 videoSyncStatus = data.state;
@@ -316,20 +382,77 @@ function setUpConnection(conn) {
                 break;
                 
             case 'userList':
-                // Update our user list
-                data.users.forEach(user => {
-                    if (!connections[user]) {
-                        connections[user] = { peerId: null };
+                // Update our user list with received users
+                if (data.users && Array.isArray(data.users)) {
+                    data.users.forEach(user => {
+                        if (user.username !== username && !connections[user.username]) {
+                            connections[user.username] = {
+                                peerId: user.peerId,
+                                username: user.username
+                            };
+                            
+                            // Try to connect to this peer too
+                            if (user.peerId && !peers[user.username]) {
+                                const newConn = peer.connect(user.peerId, {
+                                    reliable: true,
+                                    metadata: {
+                                        username: username,
+                                        peerId: peer.id
+                                    }
+                                });
+                                
+                                setUpConnection(newConn);
+                            }
+                        }
+                    });
+                    
+                    updateUserCount();
+                    updateUserListUI();
+                }
+                break;
+                
+            case 'peerList':
+                // Connect to all peers in the list
+                if (data.peers && Array.isArray(data.peers)) {
+                    data.peers.forEach(peerData => {
+                        if (peerData.peerId !== peer.id && !peers[peerData.username]) {
+                            const newConn = peer.connect(peerData.peerId, {
+                                reliable: true,
+                                metadata: {
+                                    username: username,
+                                    peerId: peer.id
+                                }
+                            });
+                            
+                            setUpConnection(newConn);
+                        }
+                    });
+                }
+                break;
+                
+            case 'usernameChange':
+                // Someone changed their username
+                if (data.oldUsername && data.newUsername && connections[data.oldUsername]) {
+                    // Update our records
+                    connections[data.newUsername] = connections[data.oldUsername];
+                    delete connections[data.oldUsername];
+                    
+                    if (peers[data.oldUsername]) {
+                        peers[data.newUsername] = peers[data.oldUsername];
+                        delete peers[data.oldUsername];
                     }
-                });
-                updateUserCount();
-                updateUserListUI();
+                    
+                    addSystemMessage(`${data.oldUsername} changed their name to ${data.newUsername}`);
+                    updateUserCount();
+                    updateUserListUI();
+                }
                 break;
         }
     });
     
+    // Handle connection closing
     conn.on('close', () => {
-        // Peer disconnected
+        // Find which user this connection belongs to
         const disconnectedUser = Object.keys(peers).find(user => peers[user] === conn);
         if (disconnectedUser) {
             delete peers[disconnectedUser];
@@ -339,6 +462,11 @@ function setUpConnection(conn) {
             updateUserCount();
             updateUserListUI();
         }
+    });
+    
+    // Handle connection errors
+    conn.on('error', err => {
+        console.error("Connection error:", err);
     });
 }
 
@@ -350,91 +478,172 @@ function loadVideo() {
         return;
     }
     
-    const videoPlayer = document.getElementById('video-player');
-    
     // Check if it's a YouTube URL
     if (videoUrl.includes('youtube.com') || videoUrl.includes('youtu.be')) {
-        // Extract video ID (simplified)
-        let videoId;
-        if (videoUrl.includes('v=')) {
-            videoId = videoUrl.split('v=')[1].split('&')[0];
-        } else if (videoUrl.includes('youtu.be/')) {
-            videoId = videoUrl.split('youtu.be/')[1];
-        }
-        
-        if (videoId) {
-            // For demonstration purposes, embed using iframe
-            const iframe = document.createElement('iframe');
-            iframe.width = '100%';
-            iframe.height = '100%';
-            iframe.src = `https://www.youtube.com/embed/${videoId}?enablejsapi=1`;
-            iframe.allow = 'accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture';
-            iframe.allowFullscreen = true;
-            iframe.id = 'youtube-player';
-            
-            // Replace video element with iframe
-            const videoWrapper = document.querySelector('.video-wrapper');
-            if (videoPlayer.parentNode === videoWrapper) {
-                videoWrapper.replaceChild(iframe, videoPlayer);
-            }
-            
-            // In a real app, you would use the YouTube API for better control
-            addSystemMessage(`YouTube video loaded`);
-            
-            // Store YouTube video ID for syncing
-            videoSyncStatus.videoUrl = `youtube:${videoId}`;
-        }
+        loadYouTubeVideo(videoUrl);
     } else {
-        // For direct video URLs
-        // Ensure we have a video element
-        let videoElement = document.getElementById('video-player');
-        if (!videoElement) {
-            videoElement = document.createElement('video');
-            videoElement.id = 'video-player';
-            videoElement.controls = true;
-            
-            const youtubePlayer = document.getElementById('youtube-player');
-            if (youtubePlayer) {
-                youtubePlayer.parentNode.replaceChild(videoElement, youtubePlayer);
-            }
-            
-            // Re-add event listeners
-            videoElement.addEventListener('play', () => {
-                if (currentRoom) {
-                    videoSyncStatus.isPlaying = true;
-                    videoSyncStatus.currentTime = videoElement.currentTime;
-                    broadcastVideoState();
-                }
-            });
-            
-            videoElement.addEventListener('pause', () => {
-                if (currentRoom) {
-                    videoSyncStatus.isPlaying = false;
-                    videoSyncStatus.currentTime = videoElement.currentTime;
-                    broadcastVideoState();
-                }
-            });
-            
-            videoElement.addEventListener('seeked', () => {
-                if (currentRoom) {
-                    videoSyncStatus.currentTime = videoElement.currentTime;
-                    broadcastVideoState();
-                }
-            });
-        }
-        
-        videoElement.src = videoUrl;
-        videoElement.load();
-        addSystemMessage(`Video loaded: ${videoUrl}`);
-        
-        // Store direct video URL for syncing
-        videoSyncStatus.videoUrl = videoUrl;
+        loadDirectVideo(videoUrl);
     }
     
     // Broadcast to all users in room
     if (currentRoom) {
         broadcastVideoState();
     }
+}
+
+// Load a YouTube video
+function loadYouTubeVideo(videoUrl) {
+    // Extract video ID (simplified)
+    let videoId;
+    if (videoUrl.includes('v=')) {
+        videoId = videoUrl.split('v=')[1].split('&')[0];
+    } else if (videoUrl.includes('youtu.be/')) {
+        videoId = videoUrl.split('youtu.be/')[1];
+    }
+    
+    if (!videoId) {
+        alert('Invalid YouTube URL');
+        return;
+    }
+    
+    // Create YouTube iframe with API enabled
+    const iframe = document.createElement('iframe');
+    iframe.width = '100%';
+    iframe.height = '100%';
+    iframe.src = `https://www.youtube.com/embed/${videoId}?enablejsapi=1&origin=${window.location.origin}`;
+    iframe.allow = 'accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture';
+    iframe.allowFullscreen = true;
+    iframe.id = 'youtube-player';
+    
+    // Replace video element with iframe
+    const videoPlayer = document.getElementById('video-player');
+    const videoWrapper = document.querySelector('.video-wrapper');
+    if (videoPlayer && videoPlayer.parentNode === videoWrapper) {
+        videoWrapper.replaceChild(iframe, videoPlayer);
+    }
+    
+    // Store video info for syncing
+    videoSyncStatus.videoUrl = `youtube:${videoId}`;
+    videoSyncStatus.isPlaying = false;
+    videoSyncStatus.currentTime = 0;
+    
+    // Set up YouTube API
+    setupYouTubeAPI(iframe);
+    
+    addSystemMessage(`YouTube video loaded`);
+}
+
+// Set up YouTube iframe API
+function setupYouTubeAPI(iframe) {
+    // Load YouTube iframe API if not already loaded
+    if (!window.YT) {
+        const tag = document.createElement('script');
+        tag.src = 'https://www.youtube.com/iframe_api';
+        
+        // onYouTubeIframeAPIReady will execute when the API is loaded
+        window.onYouTubeIframeAPIReady = function() {
+            createYouTubePlayer(iframe);
+        };
+        
+        document.body.appendChild(tag);
+    } else {
+        createYouTubePlayer(iframe);
+    }
+}
+
+// Create YouTube player object with API control
+function createYouTubePlayer(iframe) {
+    window.ytPlayer = new YT.Player(iframe.id, {
+        events: {
+            'onStateChange': onYouTubePlayerStateChange,
+            'onReady': onYouTubePlayerReady
+        }
+    });
+}
+
+// Handle YouTube player ready event
+function onYouTubePlayerReady(event) {
+    console.log("YouTube player ready");
+    
+    // Apply initial state if needed
+    if (videoSyncStatus.isPlaying) {
+        event.target.seekTo(videoSyncStatus.currentTime);
+        event.target.playVideo();
+    } else {
+        event.target.seekTo(videoSyncStatus.currentTime);
+        event.target.pauseVideo();
+    }
+}
+
+// Handle YouTube player state changes
+function onYouTubePlayerStateChange(event) {
+    if (!currentRoom) return;
+    
+    console.log("YouTube state change:", event.data);
+    
+    // YT.PlayerState: PLAYING = 1, PAUSED = 2
+    if (event.data === YT.PlayerState.PLAYING) {
+        videoSyncStatus.isPlaying = true;
+        videoSyncStatus.currentTime = event.target.getCurrentTime();
+        broadcastVideoState();
+    } else if (event.data === YT.PlayerState.PAUSED) {
+        videoSyncStatus.isPlaying = false;
+        videoSyncStatus.currentTime = event.target.getCurrentTime();
+        broadcastVideoState();
+    }
+}
+
+// Load a direct video URL
+function loadDirectVideo(videoUrl) {
+    // Ensure we have a video element
+    let videoElement = document.getElementById('video-player');
+    const youtubePlayer = document.getElementById('youtube-player');
+    
+    if (youtubePlayer) {
+        const videoWrapper = document.querySelector('.video-wrapper');
+        // Create new video element
+        videoElement = document.createElement('video');
+        videoElement.id = 'video-player';
+        videoElement.controls = true;
+        
+        // Replace YouTube iframe with video element
+        videoWrapper.replaceChild(videoElement, youtubePlayer);
+        
+        // Re-add event listeners
+        videoElement.addEventListener('play', () => {
+            if (currentRoom) {
+                videoSyncStatus.isPlaying = true;
+                videoSyncStatus.currentTime = videoElement.currentTime;
+                broadcastVideoState();
+            }
+        });
+        
+        videoElement.addEventListener('pause', () => {
+            if (currentRoom) {
+                videoSyncStatus.isPlaying = false;
+                videoSyncStatus.currentTime = videoElement.currentTime;
+                broadcastVideoState();
+            }
+        });
+        
+        videoElement.addEventListener('seeked', () => {
+            if (currentRoom) {
+                videoSyncStatus.currentTime = videoElement.currentTime;
+                broadcastVideoState();
+            }
+        });
+    }
+    
+    // Set video source
+    videoElement.src = videoUrl;
+    videoElement.load();
+    
+    // Store video info for syncing
+    videoSyncStatus.videoUrl = videoUrl;
+    videoSyncStatus.isPlaying = false;
+    videoSyncStatus.currentTime = 0;
+    
+    addSystemMessage(`Video loaded: ${videoUrl}`);
 }
 
 // Send a chat message
@@ -495,17 +704,29 @@ function copyRoomLink() {
         alert('Room link copied to clipboard!');
     }).catch(err => {
         console.error('Could not copy text: ', err);
+        // Fallback
+        const textArea = document.createElement('textarea');
+        textArea.value = url;
+        document.body.appendChild(textArea);
+        textArea.select();
+        document.execCommand('copy');
+        document.body.removeChild(textArea);
+        alert('Room link copied to clipboard!');
     });
 }
 
 // Broadcast video state to all peers
 function broadcastVideoState() {
-    // Get current video state
+    // Get current video state if it's a direct video
     const videoPlayer = document.getElementById('video-player');
     if (videoPlayer) {
         videoSyncStatus.isPlaying = !videoPlayer.paused;
         videoSyncStatus.currentTime = videoPlayer.currentTime;
-    }
+    } 
+    // For YouTube, we update the state in onYouTubePlayerStateChange
+    
+    // Log what we're broadcasting
+    console.log("Broadcasting video state:", videoSyncStatus);
     
     // Send to all connected peers
     Object.values(peers).forEach(conn => {
@@ -518,9 +739,21 @@ function broadcastVideoState() {
     });
 }
 
+// Broadcast username change to all peers
+function broadcastUsernameChange(oldUsername, newUsername) {
+    Object.values(peers).forEach(conn => {
+        if (conn.open) {
+            conn.send({
+                type: 'usernameChange',
+                oldUsername: oldUsername,
+                newUsername: newUsername
+            });
+        }
+    });
+}
+
 // Broadcast chat message to all peers
 function broadcastChatMessage(message) {
-    // Send to all connected peers
     Object.values(peers).forEach(conn => {
         if (conn.open) {
             conn.send({
@@ -534,6 +767,8 @@ function broadcastChatMessage(message) {
 
 // Apply received video state
 function applyVideoState(state) {
+    console.log("Applying video state:", state);
+    
     // If there's no video URL yet, nothing to sync
     if (!state.videoUrl) return;
     
@@ -550,34 +785,23 @@ function applyVideoState(state) {
     
     // Handle YouTube videos
     if (state.videoUrl.startsWith('youtube:')) {
-        const youtubePlayer = document.getElementById('youtube-player');
-        if (youtubePlayer && youtubePlayer.contentWindow) {
+        if (window.ytPlayer && window.ytPlayer.seekTo) {
             try {
-                // Using YouTube iframe API postMessage
-                if (Math.abs(state.currentTime - youtubePlayer.getCurrentTime) > 1) {
-                    youtubePlayer.contentWindow.postMessage(JSON.stringify({
-                        event: 'command',
-                        func: 'seekTo',
-                        args: [state.currentTime, true]
-                    }), '*');
+                // Use the YouTube API object
+                if (Math.abs(window.ytPlayer.getCurrentTime() - state.currentTime) > 1) {
+                    window.ytPlayer.seekTo(state.currentTime, true);
                 }
                 
-                if (state.isPlaying) {
-                    youtubePlayer.contentWindow.postMessage(JSON.stringify({
-                        event: 'command',
-                        func: 'playVideo',
-                        args: []
-                    }), '*');
-                } else {
-                    youtubePlayer.contentWindow.postMessage(JSON.stringify({
-                        event: 'command',
-                        func: 'pauseVideo',
-                        args: []
-                    }), '*');
+                if (state.isPlaying && window.ytPlayer.getPlayerState() !== 1) {
+                    window.ytPlayer.playVideo();
+                } else if (!state.isPlaying && window.ytPlayer.getPlayerState() === 1) {
+                    window.ytPlayer.pauseVideo();
                 }
             } catch (e) {
                 console.error("YouTube API error:", e);
             }
+        } else {
+            console.log("YouTube player not ready yet");
         }
         return;
     }
@@ -635,4 +859,36 @@ function updateUserListUI() {
             userList.appendChild(userItem);
         }
     });
+}
+
+// Simple BroadcastChannel polyfill for browsers that don't support it
+if (!window.BroadcastChannel) {
+    window.BroadcastChannel = class BroadcastChannel {
+        constructor(channelName) {
+            this.channelName = channelName;
+            this.listeners = {};
+            
+            window.addEventListener('storage', (event) => {
+                if (event.key === this.channelName) {
+                    try {
+                        const data = JSON.parse(event.newValue);
+                        if (this.onmessage) {
+                            this.onmessage({ data });
+                        }
+                    } catch (e) {
+                        console.error("BroadcastChannel error:", e);
+                    }
+                }
+            });
+        }
+        
+        postMessage(message) {
+            localStorage.setItem(this.channelName, JSON.stringify(message));
+            localStorage.removeItem(this.channelName);
+        }
+        
+        close() {
+            // Nothing to do for this simple polyfill
+        }
+    };
 }
