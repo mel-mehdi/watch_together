@@ -1,0 +1,540 @@
+/* Modern WhatsApp-like styling with enhanced visual effects */
+:root {
+    --primary-color: #128c7e;
+    --secondary-color: #075e54;
+    --light-green: #25d366;
+    --chat-bg: #e5ddd5;
+    --sent-msg: #dcf8c6;
+    --received-msg: #ffffff;
+    --system-msg: #ffe6cc;
+    --dark-bg: #232323;
+    --text-color: #333333;
+    --shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+    --border-radius: 20px;
+}
+
+* {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+}
+
+body { 
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
+    margin: 0; 
+    padding: 0; 
+    background-color: var(--dark-bg);
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    color: var(--text-color);
+    overflow: hidden;
+}
+
+/* Main container for side-by-side layout */
+.main-container {
+    display: flex;
+    height: 100vh;
+    width: 100%;
+}
+
+/* Chat Section Styling */
+.chat-section {
+    width: 40%;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    background-color: var(--chat-bg);
+    background-image: url('https://web.whatsapp.com/img/bg-chat-tile-light_04fcacde539c58cca6745483d4858c52.png');
+    border-right: 1px solid rgba(0, 0, 0, 0.1);
+}
+
+/* Video Section Styling */
+.video-section {
+    width: 60%;
+    height: 100%;
+    background-color: var(--dark-bg);
+    padding: 15px;
+    text-align: center;
+    position: relative;
+    display: flex;
+    flex-direction: column;
+}
+
+.video-container {
+    position: relative;
+    width: 100%;
+    flex-grow: 1;
+    margin: 0 auto;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+    border-radius: 8px;
+    overflow: hidden;
+}
+
+#video-player {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    border: none;
+    border-radius: 8px;
+}
+
+.video-controls {
+    margin-top: 15px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 12px;
+    padding-bottom: 10px;
+}
+
+.video-url-input {
+    flex: 1;
+    max-width: 500px;
+    padding: 12px 15px;
+    border-radius: var(--border-radius);
+    border: none;
+    font-size: 14px;
+    box-shadow: var(--shadow);
+    transition: all 0.3s ease;
+}
+
+.video-url-input:focus {
+    outline: none;
+    box-shadow: 0 0 0 2px var(--light-green);
+}
+
+.change-video-btn {
+    padding: 12px 20px;
+    border-radius: var(--border-radius);
+    border: none;
+    background-color: var(--primary-color);
+    color: white;
+    cursor: pointer;
+    font-weight: 600;
+    transition: all 0.3s ease;
+    box-shadow: var(--shadow);
+}
+
+.change-video-btn:hover {
+    background-color: var(--secondary-color);
+    transform: translateY(-2px);
+}
+
+.change-video-btn:active {
+    transform: translateY(0);
+}
+
+/* Admin UI Elements */
+.admin-badge {
+    display: inline-block;
+    background-color: var(--secondary-color);
+    color: white;
+    font-size: 10px;
+    padding: 3px 6px;
+    border-radius: 3px;
+    margin-left: 5px;
+    text-transform: uppercase;
+    font-weight: bold;
+    letter-spacing: 0.5px;
+}
+
+.admin-controls {
+    margin-top: 15px;
+    color: white;
+    display: none;
+    background-color: rgba(7, 94, 84, 0.8);
+    padding: 10px;
+    border-radius: 8px;
+    max-width: 600px;
+    margin: 15px auto 0;
+}
+
+.admin-notice {
+    background-color: rgba(0, 0, 0, 0.8);
+    color: white;
+    padding: 8px 12px;
+    border-radius: 8px;
+    position: absolute;
+    top: 15px;
+    right: 15px;
+    z-index: 100;
+    font-size: 12px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+    backdrop-filter: blur(4px);
+}
+
+.request-admin-btn {
+    padding: 8px 15px;
+    border-radius: 15px;
+    border: none;
+    background-color: var(--secondary-color);
+    color: white;
+    cursor: pointer;
+    font-size: 12px;
+    font-weight: 600;
+    transition: all 0.3s ease;
+    box-shadow: var(--shadow);
+}
+
+.request-admin-btn:hover {
+    background-color: var(--primary-color);
+    transform: translateY(-2px);
+}
+
+/* Chat Styling */
+.chat-container {
+    flex: 1;
+    overflow-y: auto;
+    padding: 15px;
+    padding-bottom: 75px;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(0, 0, 0, 0.2) transparent;
+}
+
+.chat-container::-webkit-scrollbar {
+    width: 6px;
+}
+
+.chat-container::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.chat-container::-webkit-scrollbar-thumb {
+    background-color: rgba(0, 0, 0, 0.2);
+    border-radius: 6px;
+}
+
+#messages { 
+    list-style-type: none; 
+    margin: 0; 
+    padding: 0; 
+}
+
+#messages li { 
+    margin-bottom: 15px;
+    max-width: 85%;
+    padding: 12px 15px;
+    border-radius: 10px;
+    clear: both;
+    position: relative;
+    word-wrap: break-word;
+    box-shadow: var(--shadow);
+    animation: fadeIn 0.3s ease;
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+.message-received {
+    background-color: var(--received-msg);
+    float: left;
+    border-top-left-radius: 0;
+}
+
+.message-received:before {
+    content: '';
+    position: absolute;
+    left: -10px;
+    top: 0;
+    border-top: 10px solid var(--received-msg);
+    border-left: 10px solid transparent;
+}
+
+.message-sent {
+    background-color: var(--sent-msg);
+    float: right;
+    border-top-right-radius: 0;
+}
+
+.message-sent:before {
+    content: '';
+    position: absolute;
+    right: -10px;
+    top: 0;
+    border-top: 10px solid var(--sent-msg);
+    border-right: 10px solid transparent;
+}
+
+.system-message {
+    background-color: var(--system-msg);
+    text-align: center;
+    clear: both;
+    float: none;
+    max-width: 100%;
+    margin: 15px auto;
+    font-size: 12px;
+    padding: 8px 15px;
+    color: #7b5900;
+    border-radius: 15px;
+}
+
+.username {
+    font-weight: bold;
+    margin-bottom: 5px;
+    color: var(--secondary-color);
+    display: flex;
+    align-items: center;
+    font-size: 14px;
+}
+
+.timestamp {
+    font-size: 11px;
+    color: #999;
+    text-align: right;
+    margin-top: 5px;
+}
+
+/* Message Input Form */
+#form { 
+    display: flex; 
+    width: 100%; 
+    background-color: #f0f0f0;
+    padding: 15px;
+    box-sizing: border-box;
+    border-top: 1px solid #ddd;
+    box-shadow: 0 -2px 10px rgba(0, 0, 0, 0.05);
+}
+
+#input { 
+    flex: 1; 
+    padding: 14px 20px; 
+    border-radius: var(--border-radius);
+    border: none;
+    margin-right: 12px;
+    box-shadow: var(--shadow);
+    font-size: 15px;
+    transition: all 0.3s ease;
+}
+
+#input:focus {
+    outline: none;
+    box-shadow: 0 0 0 2px var(--light-green);
+}
+
+#send { 
+    padding: 12px 22px;
+    border-radius: var(--border-radius);
+    border: none;
+    background-color: var(--primary-color);
+    color: white;
+    cursor: pointer;
+    font-weight: 600;
+    transition: all 0.3s ease;
+    box-shadow: var(--shadow);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+#send:hover {
+    background-color: var(--secondary-color);
+    transform: translateY(-2px);
+}
+
+#send:active {
+    transform: translateY(0);
+}
+
+/* Modal Styling */
+.username-modal, .admin-request-modal {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0,0,0,0.6);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 1000;
+    backdrop-filter: blur(4px);
+}
+
+.admin-request-modal {
+    display: none;
+}
+
+.modal-content {
+    background-color: white;
+    padding: 30px;
+    border-radius: 15px;
+    width: 350px;
+    text-align: center;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+    animation: modalAppear 0.3s ease;
+}
+
+@keyframes modalAppear {
+    from { opacity: 0; transform: scale(0.9); }
+    to { opacity: 1; transform: scale(1); }
+}
+
+.modal-content h2 {
+    margin-bottom: 20px;
+    color: var(--secondary-color);
+}
+
+#username-input {
+    width: 100%;
+    padding: 12px 15px;
+    margin: 15px 0;
+    border-radius: 10px;
+    border: 1px solid #ddd;
+    box-sizing: border-box;
+    font-size: 15px;
+    box-shadow: var(--shadow);
+    transition: all 0.3s ease;
+}
+
+#username-input:focus {
+    outline: none;
+    border-color: var(--primary-color);
+    box-shadow: 0 0 0 2px rgba(18, 140, 126, 0.2);
+}
+
+#username-submit {
+    padding: 12px 25px;
+    background-color: var(--primary-color);
+    color: white;
+    border: none;
+    border-radius: 10px;
+    cursor: pointer;
+    font-weight: 600;
+    font-size: 15px;
+    transition: all 0.3s ease;
+    margin-top: 10px;
+    box-shadow: var(--shadow);
+}
+
+#username-submit:hover {
+    background-color: var(--secondary-color);
+    transform: translateY(-2px);
+}
+
+/* Modal buttons */
+#accept-admin-request, #reject-admin-request {
+    padding: 10px 20px;
+    border: none;
+    border-radius: 8px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    box-shadow: var(--shadow);
+}
+
+#accept-admin-request {
+    background-color: var(--primary-color);
+    color: white;
+    margin-right: 10px;
+}
+
+#accept-admin-request:hover {
+    background-color: var(--secondary-color);
+    transform: translateY(-2px);
+}
+
+#reject-admin-request {
+    background-color: #e74c3c;
+    color: white;
+}
+
+#reject-admin-request:hover {
+    background-color: #c0392b;
+    transform: translateY(-2px);
+}
+
+/* Admin control buttons */
+.admin-video-controls {
+    display: flex;
+    justify-content: center;
+    gap: 10px;
+    margin-top: 10px;
+}
+
+.admin-btn {
+    padding: 8px 15px;
+    border-radius: 8px;
+    border: none;
+    background-color: var(--primary-color);
+    color: white;
+    cursor: pointer;
+    font-weight: 600;
+    transition: all 0.3s ease;
+    box-shadow: var(--shadow);
+    display: flex;
+    align-items: center;
+    gap: 5px;
+}
+
+.admin-btn:hover {
+    background-color: var(--secondary-color);
+    transform: translateY(-2px);
+}
+
+.admin-btn:active {
+    transform: translateY(0);
+}
+
+.admin-btn i {
+    font-size: 14px;
+}
+
+/* Admin controller indicator for non-admin users */
+.admin-viewing-notice {
+    position: absolute;
+    top: 10px;
+    left: 10px;
+    background-color: rgba(0, 0, 0, 0.7);
+    color: white;
+    padding: 8px 15px;
+    border-radius: 8px;
+    font-size: 12px;
+    z-index: 100;
+    display: none;
+    animation: pulseNotice 2s infinite;
+}
+
+@keyframes pulseNotice {
+    0% { background-color: rgba(0, 0, 0, 0.7); }
+    50% { background-color: rgba(18, 140, 126, 0.7); }
+    100% { background-color: rgba(0, 0, 0, 0.7); }
+}
+
+/* Responsive Design */
+@media (max-width: 900px) {
+    .main-container {
+        flex-direction: column;
+    }
+    
+    .chat-section, .video-section {
+        width: 100%;
+        height: 50vh;
+    }
+    
+    .video-section {
+        order: 1;
+    }
+    
+    .chat-section {
+        order: 2;
+    }
+    
+    .video-controls {
+        flex-direction: column;
+    }
+    
+    .video-url-input {
+        max-width: 100%;
+        width: 100%;
+    }
+    
+    .change-video-btn {
+        width: 100%;
+        margin-top: 10px;
+    }
+}

@@ -1,47 +1,79 @@
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Chat App</title>
-    <style>
-        /* Basic styling */
-        body { font-family: Arial, sans-serif; margin: 0; padding: 0; }
-        #messages { list-style-type: none; margin: 0; padding: 0; }
-        #messages li { padding: 8px; border-bottom: 1px solid #ddd; }
-        #form { display: flex; position: fixed; bottom: 0; width: 100%; }
-        #input { flex: 1; padding: 10px; }
-        #send { padding: 10px; }
-    </style>
+    <title>WhatsApp Style Chat with Video</title>
+    <!-- Add FontAwesome for icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <!-- Link to external CSS file -->
+    <link rel="stylesheet" href="/css/styles.css">
 </head>
 <body>
-    <ul id="messages"></ul>
-    <form id="form" action="">
-        <input id="input" autocomplete="off" placeholder="Type a message..." />
-        <button id="send">Send</button>
-    </form>
+    <!-- Username modal -->
+    <div class="username-modal" id="username-modal">
+        <div class="modal-content">
+            <h2>Enter your name</h2>
+            <input type="text" id="username-input" placeholder="Your name..." autocomplete="off">
+            <button id="username-submit">Join Chat</button>
+        </div>
+    </div>
+    
+    <!-- Admin request modal -->
+    <div class="admin-request-modal" id="admin-request-modal">
+        <div class="modal-content">
+            <h2>Admin Request</h2>
+            <p id="admin-request-message"></p>
+            <button id="accept-admin-request">Accept</button>
+            <button id="reject-admin-request">Reject</button>
+        </div>
+    </div>
+
+    <!-- Main container for side-by-side layout -->
+    <div class="main-container">
+        <!-- Chat section (LEFT) -->
+        <div class="chat-section">
+            <div class="chat-container">
+                <ul id="messages"></ul>
+            </div>
+            
+            <form id="form" action="">
+                <input id="input" autocomplete="off" placeholder="Type a message..." />
+                <button id="send"><i class="fas fa-paper-plane"></i></button>
+            </form>
+        </div>
+        
+        <!-- Video section (RIGHT) -->
+        <div class="video-section">
+            <div class="admin-notice" id="admin-notice"></div>
+            <div class="video-container">
+                <iframe id="video-player" src="" frameborder="0" 
+                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" 
+                    allowfullscreen></iframe>
+            </div>
+            <div class="video-controls">
+                <input type="text" class="video-url-input" id="video-url" 
+                    placeholder="Enter YouTube video URL (e.g., https://www.youtube.com/watch?v=dQw4w9WgXcQ)">
+                <button class="change-video-btn" id="change-video">Change Video</button>
+            </div>
+            <div class="admin-controls" id="admin-controls">
+                <p>You are the admin controller. You control the video for everyone.</p>
+                <div class="admin-video-controls">
+                    <button id="admin-play" class="admin-btn"><i class="fas fa-play"></i> Play for Everyone</button>
+                    <button id="admin-pause" class="admin-btn"><i class="fas fa-pause"></i> Pause for Everyone</button>
+                    <button id="admin-restart" class="admin-btn"><i class="fas fa-redo"></i> Restart Video</button>
+                </div>
+            </div>
+            <div id="request-admin-container" style="margin-top: 10px; text-align: center; display: none;">
+                <button class="request-admin-btn" id="request-admin">Request Admin Control</button>
+            </div>
+            <div class="admin-viewing-notice" id="admin-viewing-notice">Admin is controlling playback...</div>
+        </div>
+    </div>
+    
+    <!-- Include Socket.io -->
     <script src="/socket.io/socket.io.js"></script>
-    <script>
-        const socket = io();
-        const form = document.getElementById('form');
-        const input = document.getElementById('input');
-        const messages = document.getElementById('messages');
-
-        form.addEventListener('submit', (e) => {
-            e.preventDefault();
-            if (input.value) {
-                socket.emit('chat message', input.value);
-                input.value = '';
-            }
-        });
-
-        socket.on('chat message', (msg) => {
-            const item = document.createElement('li');
-            item.textContent = msg;
-            messages.appendChild(item);
-            window.scrollTo(0, document.body.scrollHeight);
-        });
-    </script>
+    <!-- Link to external JavaScript file -->
+    <script src="/js/main.js"></script>
 </body>
 </html>
