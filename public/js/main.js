@@ -20,6 +20,9 @@ const adminPlayBtn = document.getElementById('admin-play');
 const adminPauseBtn = document.getElementById('admin-pause');
 const adminRestartBtn = document.getElementById('admin-restart');
 const adminViewingNotice = document.getElementById('admin-viewing-notice');
+const voiceChatToggle = document.getElementById('voice-chat-toggle');
+const voiceStatus = document.getElementById('voice-status');
+const usersInCall = document.getElementById('users-in-call');
 
 let username = '';
 let isAdmin = false;
@@ -27,6 +30,15 @@ let currentAdminUser = '';
 let requestingUserId = '';
 let player;
 let ignoreEvents = false;
+let localStream = null;
+let peerConnections = {};
+let isInVoiceChat = false;
+
+// Add these variables at the top with your other variables
+let syncInterval;
+const SYNC_INTERVAL_MS = 5000; // Sync every 5 seconds
+let lastKnownAdminTime = 0;
+let lastSyncTime = 0;
 
 // Create a better YouTube player object
 function onYouTubeIframeAPIReady() {
@@ -62,6 +74,7 @@ function initializePlayer(videoUrl) {
 // Setup the YouTube player control API
 function setupYouTubeControlAPI() {
     player = {
+        playerState: -1, // -1: unstarted, 0: ended, 1: playing, 2: paused, 3: buffering, 5: video cued
         getCurrentTime: function() {
             return new Promise((resolve) => {
                 const messageId = Date.now().toString();
@@ -95,6 +108,40 @@ function setupYouTubeControlAPI() {
                 }, 500);
             });
         },
+        getPlayerState: function() {
+            return new Promise((resolve) => {
+                const messageId = Date.now().toString();
+                
+                const handleMessage = function(event) {
+                    if (event.origin !== "https://www.youtube.com") return;
+                    
+                    try {
+                        const data = JSON.parse(event.data);
+                        if (data.id === messageId && data.playerState !== undefined) {
+                            window.removeEventListener('message', handleMessage);
+                            player.playerState = data.playerState;
+                            resolve(data.playerState);
+                        }
+                    } catch (e) {
+                        // Not a JSON message or not the response we're looking for
+                    }
+                };
+                
+                window.addEventListener('message', handleMessage);
+                
+                videoPlayer.contentWindow.postMessage(JSON.stringify({
+                    event: 'command',
+                    func: 'getPlayerState',
+                    id: messageId
+                }), '*');
+                
+                // Fallback in case we don't get a response
+                setTimeout(() => {
+                    window.removeEventListener('message', handleMessage);
+                    resolve(player.playerState);
+                }, 500);
+            });
+        },
         seekTo: function(time) {
             videoPlayer.contentWindow.postMessage(JSON.stringify({
                 event: 'command',
@@ -107,16 +154,56 @@ function setupYouTubeControlAPI() {
                 event: 'command',
                 func: 'playVideo'
             }), '*');
+            player.playerState = 1;
         },
         pauseVideo: function() {
             videoPlayer.contentWindow.postMessage(JSON.stringify({
                 event: 'command',
                 func: 'pauseVideo'
             }), '*');
+            player.playerState = 2;
         }
     };
     
+    // Setup event listeners for the YouTube iframe
+    setupYouTubeEventListeners();
+    
     console.log("YouTube player control API is set up");
+}
+
+// Add a function to listen for YouTube iframe events
+function setupYouTubeEventListeners() {
+    window.addEventListener('message', (event) => {
+        if (event.origin !== "https://www.youtube.com") return;
+        
+        try {
+            const data = JSON.parse(event.data);
+            
+            // Only react to YouTube API events
+            if (data.event && data.event === "onStateChange") {
+                player.playerState = data.info;
+                
+                // Only the admin should control the video for everyone
+                if (isAdmin && !ignoreEvents) {
+                    if (data.info === 1) { // playing
+                        player.getCurrentTime().then(time => {
+                            socket.emit('video play', time);
+                            socket.emit('admin action', 'play');
+                            console.log("Admin auto-detected play, time:", time);
+                        });
+                    } else if (data.info === 2) { // paused
+                        player.getCurrentTime().then(time => {
+                            socket.emit('video pause', time);
+                            socket.emit('admin action', 'pause');
+                            console.log("Admin auto-detected pause, time:", time);
+                        });
+                    }
+                }
+            }
+        } catch (e) {
+            // Not a JSON message or not the event we're looking for
+        }
+    });
 }
 
 // Update admin UI
@@ -126,12 +213,65 @@ function updateAdminUI() {
         adminNotice.textContent = 'You are the admin controller';
         adminNotice.style.display = 'block';
         requestAdminContainer.style.display = 'none';
-        // Enable video controls (they're always enabled for admin)
+        
+        // Start continuous time sync from admin to all users
+        startContinuousSync();
     } else {
         adminControls.style.display = 'none';
         adminNotice.textContent = `${currentAdminUser} is controlling the video`;
         adminNotice.style.display = 'block';
         requestAdminContainer.style.display = 'block';
+        
+        // Non-admins don't need to send continuous updates
+        stopContinuousSync();
+    }
+}
+
+// Function to start continuous sync from admin to all users
+function startContinuousSync() {
+    // Clear any existing intervals
+    if (syncInterval) {
+        clearInterval(syncInterval);
+    }
+    
+    // Set a new interval for continuous sync
+    syncInterval = setInterval(() => {
+        if (isAdmin && player) {
+            // Get current state and time
+            Promise.all([player.getCurrentTime(), player.getPlayerState()])
+                .then(([currentTime, playerState]) => {
+                    // Only send updates when there's a significant change
+                    if (Math.abs(currentTime - lastKnownAdminTime) > 0.5 || 
+                        Date.now() - lastSyncTime > 10000) { // Force update every 10 seconds
+                        
+                        lastKnownAdminTime = currentTime;
+                        lastSyncTime = Date.now();
+                        
+                        // Send detailed sync info to all clients
+                        socket.emit('detailed sync', {
+                            time: currentTime,
+                            state: playerState,
+                            timestamp: Date.now()
+                        });
+                        
+                        console.log("Admin sending detailed sync:", {
+                            time: currentTime,
+                            state: playerState
+                        });
+                    }
+                })
+                .catch(err => {
+                    console.error("Error during continuous sync:", err);
+                });
+        }
+    }, SYNC_INTERVAL_MS);
+}
+
+// Function to stop continuous sync
+function stopContinuousSync() {
+    if (syncInterval) {
+        clearInterval(syncInterval);
+        syncInterval = null;
     }
 }
 
@@ -199,6 +339,20 @@ socket.on('admin request', (requestingUser, userId) => {
 socket.on('video state', (state) => {
     initializePlayer(state.url);
     videoUrlInput.value = state.url;
+    
+    // Wait for player to initialize then set the correct time and play state
+    setTimeout(() => {
+        if (player) {
+            player.seekTo(state.currentTime);
+            
+            // Set play state after seeking
+            setTimeout(() => {
+                if (state.playing) {
+                    player.playVideo();
+                }
+            }, 500);
+        }
+    }, 1000); // Give some time for player to initialize
 });
 
 socket.on('change video', (url) => {
@@ -218,20 +372,30 @@ socket.on('video play', (data) => {
     // If we received a timestamp object
     let time = typeof data === 'object' ? data.time : data;
     
-    // Calculate any time adjustment based on server time if available
-    if (typeof data === 'object' && data.serverTime) {
-        const latency = (Date.now() - data.serverTime) / 1000; // Convert to seconds
-        time = time + latency; // Adjust for network latency
-    }
-    
     console.log("Video play event received, time:", time);
     
-    // First seek to the exact time, then play
-    player.seekTo(time);
-    setTimeout(() => {
-        player.playVideo();
-        ignoreEvents = false;
-    }, 500);
+    // Only seek if the time difference is significant
+    player.getCurrentTime().then(currentPlayerTime => {
+        if (Math.abs(time - currentPlayerTime) > 1) {
+            player.seekTo(time);
+            setTimeout(() => {
+                player.playVideo();
+                ignoreEvents = false;
+            }, 500);
+        } else {
+            // If time is close enough, just play without seeking
+            player.playVideo();
+            ignoreEvents = false;
+        }
+    }).catch(err => {
+        console.error("Error getting current time:", err);
+        // Fallback if we can't get current time
+        player.seekTo(time);
+        setTimeout(() => {
+            player.playVideo();
+            ignoreEvents = false;
+        }, 500);
+    });
     
     // Show visual indicator for non-admins
     if (!isAdmin) {
@@ -243,7 +407,7 @@ socket.on('video play', (data) => {
     }
 });
 
-// Update the video pause event handler similarly
+// Update the video pause event handler
 socket.on('video pause', (data) => {
     if (!player) {
         console.log("Player not initialized yet");
@@ -257,11 +421,23 @@ socket.on('video pause', (data) => {
     
     console.log("Video pause event received, time:", time);
     
-    player.seekTo(time);
-    setTimeout(() => {
-        player.pauseVideo();
-        ignoreEvents = false;
-    }, 500);
+    // First pause at current position
+    player.pauseVideo();
+    
+    // Then only seek if needed
+    player.getCurrentTime().then(currentPlayerTime => {
+        if (Math.abs(time - currentPlayerTime) > 1) {
+            player.seekTo(time);
+        }
+        setTimeout(() => {
+            ignoreEvents = false;
+        }, 500);
+    }).catch(err => {
+        console.error("Error getting current time:", err);
+        setTimeout(() => {
+            ignoreEvents = false;
+        }, 500);
+    });
     
     // Show visual indicator for non-admins
     if (!isAdmin) {
@@ -367,7 +543,7 @@ socket.on('system message', (msg) => {
     document.querySelector('.chat-container').scrollTop = document.querySelector('.chat-container').scrollHeight;
 });
 
-// Admin play button
+// Admin play button - Fix to maintain current time
 adminPlayBtn.addEventListener('click', async () => {
     if (isAdmin) {
         try {
@@ -382,7 +558,7 @@ adminPlayBtn.addEventListener('click', async () => {
     }
 });
 
-// Admin pause button
+// Admin pause button - Fix to maintain current time
 adminPauseBtn.addEventListener('click', async () => {
     if (isAdmin) {
         try {
@@ -423,6 +599,237 @@ socket.on('admin action', (action) => {
         setTimeout(() => {
             adminViewingNotice.style.display = 'none';
         }, 3000);
+    }
+});
+
+// Voice Chat functionality
+// Toggle voice chat
+voiceChatToggle.addEventListener('click', async () => {
+    if (!isInVoiceChat) {
+        try {
+            // Request microphone access
+            localStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            
+            // Join voice chat room
+            socket.emit('join voice chat', username);
+            
+            // When joining voice chat
+            voiceChatToggle.classList.add('active');
+            voiceChatToggle.innerHTML = '<i class="fas fa-microphone-slash"></i>';
+            
+            voiceStatus.textContent = 'Voice chat active';
+            isInVoiceChat = true;
+            
+            // Set up voice activity detection
+            setupVoiceActivityDetection(localStream);
+            
+        } catch (error) {
+            console.error('Error accessing microphone:', error);
+            alert('Unable to access your microphone. Please check permissions.');
+        }
+    } else {
+        // Leave voice chat
+        leaveVoiceChat();
+    }
+});
+
+// Leave voice chat
+function leaveVoiceChat() {
+    if (localStream) {
+        localStream.getTracks().forEach(track => track.stop());
+        localStream = null;
+    }
+    
+    // Close all peer connections
+    Object.values(peerConnections).forEach(pc => pc.close());
+    peerConnections = {};
+    
+    // Notify server
+    socket.emit('leave voice chat');
+    
+    // When leaving voice chat
+    voiceChatToggle.classList.remove('active');
+    voiceChatToggle.innerHTML = '<i class="fas fa-microphone"></i>';
+    voiceStatus.textContent = 'Voice chat inactive';
+    usersInCall.innerHTML = '';
+    isInVoiceChat = false;
+}
+
+// Set up voice activity detection
+function setupVoiceActivityDetection(stream) {
+    const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+    const analyser = audioContext.createAnalyser();
+    const microphone = audioContext.createMediaStreamSource(stream);
+    const scriptProcessor = audioContext.createScriptProcessor(2048, 1, 1);
+    
+    analyser.smoothingTimeConstant = 0.8;
+    analyser.fftSize = 1024;
+    
+    microphone.connect(analyser);
+    analyser.connect(scriptProcessor);
+    scriptProcessor.connect(audioContext.destination);
+    
+    scriptProcessor.onaudioprocess = function() {
+        const array = new Uint8Array(analyser.frequencyBinCount);
+        analyser.getByteFrequencyData(array);
+        const arraySum = array.reduce((a, value) => a + value, 0);
+        const average = arraySum / array.length;
+        
+        // If sound level is above threshold, emit speaking event
+        if (average > 15) {
+            socket.emit('speaking', true);
+        } else {
+            socket.emit('speaking', false);
+        }
+    };
+}
+
+// Create peer connection for new user
+async function createPeerConnection(userId) {
+    try {
+        const pc = new RTCPeerConnection({
+            iceServers: [
+                { urls: 'stun:stun.l.google.com:19302' },
+                { urls: 'stun:stun1.l.google.com:19302' }
+            ]
+        });
+        
+        // Add our audio track to the connection
+        if (localStream) {
+            localStream.getTracks().forEach(track => {
+                pc.addTrack(track, localStream);
+            });
+        }
+        
+        // Listen for remote tracks
+        pc.ontrack = (event) => {
+            const remoteAudio = document.createElement('audio');
+            remoteAudio.id = `audio-${userId}`;
+            remoteAudio.srcObject = event.streams[0];
+            remoteAudio.autoplay = true;
+            document.body.appendChild(remoteAudio);
+        };
+        
+        // Listen for ICE candidates
+        pc.onicecandidate = (event) => {
+            if (event.candidate) {
+                socket.emit('ice candidate', {
+                    candidate: event.candidate,
+                    to: userId
+                });
+            }
+        };
+        
+        peerConnections[userId] = pc;
+        return pc;
+    } catch (error) {
+        console.error('Error creating peer connection:', error);
+        return null;
+    }
+}
+
+// Socket events for voice chat
+socket.on('user joined voice', async (data) => {
+    // Add user to voice chat list
+    const userElement = document.createElement('div');
+    userElement.id = `voice-user-${data.userId}`;
+    userElement.className = 'user-in-call';
+    userElement.innerHTML = `<i class="fas fa-microphone"></i> ${data.username}`;
+    usersInCall.appendChild(userElement);
+    
+    // Don't create connection to self
+    if (data.userId === socket.id) return;
+    
+    // Create peer connection and send offer
+    const pc = await createPeerConnection(data.userId);
+    if (pc) {
+        const offer = await pc.createOffer();
+        await pc.setLocalDescription(offer);
+        
+        socket.emit('voice offer', {
+            offer: pc.localDescription,
+            to: data.userId
+        });
+    }
+});
+
+socket.on('user left voice', (userId) => {
+    // Remove user from voice chat list
+    const userElement = document.getElementById(`voice-user-${userId}`);
+    if (userElement) {
+        userElement.remove();
+    }
+    
+    // Remove audio element
+    const audioElement = document.getElementById(`audio-${userId}`);
+    if (audioElement) {
+        audioElement.remove();
+    }
+    
+    // Close peer connection
+    if (peerConnections[userId]) {
+        peerConnections[userId].close();
+        delete peerConnections[userId];
+    }
+});
+
+socket.on('voice offer', async (data) => {
+    if (!isInVoiceChat) return;
+    
+    // Create peer connection if it doesn't exist
+    if (!peerConnections[data.from]) {
+        await createPeerConnection(data.from);
+    }
+    
+    const pc = peerConnections[data.from];
+    
+    // Set remote description from offer
+    await pc.setRemoteDescription(new RTCSessionDescription(data.offer));
+    
+    // Create answer
+    const answer = await pc.createAnswer();
+    await pc.setLocalDescription(answer);
+    
+    // Send answer back
+    socket.emit('voice answer', {
+        answer: pc.localDescription,
+        to: data.from
+    });
+});
+
+socket.on('voice answer', async (data) => {
+    const pc = peerConnections[data.from];
+    if (pc) {
+        await pc.setRemoteDescription(new RTCSessionDescription(data.answer));
+    }
+});
+
+socket.on('ice candidate', async (data) => {
+    const pc = peerConnections[data.from];
+    if (pc) {
+        try {
+            await pc.addIceCandidate(new RTCIceCandidate(data.candidate));
+        } catch (error) {
+            console.error('Error adding ICE candidate:', error);
+        }
+    }
+});
+
+socket.on('user speaking', (data) => {
+    const userElement = document.getElementById(`voice-user-${data.userId}`);
+    if (userElement) {
+        if (data.speaking) {
+            userElement.classList.add('speaking');
+        } else {
+            userElement.classList.remove('speaking');
+        }
+    }
+});
+
+// Cleanup on page unload
+window.addEventListener('beforeunload', () => {
+    if (isInVoiceChat) {
+        leaveVoiceChat();
     }
 });
 

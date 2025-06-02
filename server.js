@@ -12,18 +12,25 @@ app.use(express.static('public'));
 const users = {};
 // Store current video state
 let videoState = {
-    url: 'https://www.youtube.com/embed/dQw4w9WgXcQ?enablejsapi=1', // Default video
+    url: '', // Default video
     playing: false,
     currentTime: 0
 };
 // Store admin user
 let adminUser = null;
 
+// Voice chat users
+const voiceChatUsers = {};
+
 io.on('connection', (socket) => {
     console.log('A user connected');
     
     // Send current video state to new user
-    socket.emit('video state', videoState);
+    socket.emit('video state', {
+        url: videoState.url,
+        playing: videoState.playing,
+        currentTime: videoState.currentTime // Include the current time
+    });
     
     // Handle user joining with username
     socket.on('user join', (username) => {
@@ -67,7 +74,8 @@ io.on('connection', (socket) => {
         // Only admin can control video for everyone
         if (socket.id === adminUser) {
             videoState.playing = true;
-            videoState.currentTime = time;
+            videoState.currentTime = time; // Update the stored time
+            
             // Include server timestamp to help with synchronization
             socket.broadcast.emit('video play', {
                 time: time,
@@ -81,7 +89,8 @@ io.on('connection', (socket) => {
         // Only admin can control video for everyone
         if (socket.id === adminUser) {
             videoState.playing = false;
-            videoState.currentTime = time;
+            videoState.currentTime = time; // Update the stored time
+            
             // Include server timestamp to help with synchronization
             socket.broadcast.emit('video pause', {
                 time: time,
@@ -151,6 +160,66 @@ io.on('connection', (socket) => {
         }
     });
     
+    // Handle voice chat
+    socket.on('join voice chat', (username) => {
+        voiceChatUsers[socket.id] = username;
+        
+        // Notify all users that this user joined voice chat
+        io.emit('user joined voice', {
+            userId: socket.id,
+            username: username
+        });
+    });
+
+    socket.on('leave voice chat', () => {
+        delete voiceChatUsers[socket.id];
+        
+        // Notify all users that this user left voice chat
+        io.emit('user left voice', socket.id);
+    });
+
+    socket.on('voice offer', (data) => {
+        socket.to(data.to).emit('voice offer', {
+            offer: data.offer,
+            from: socket.id
+        });
+    });
+
+    socket.on('voice answer', (data) => {
+        socket.to(data.to).emit('voice answer', {
+            answer: data.answer,
+            from: socket.id
+        });
+    });
+
+    socket.on('ice candidate', (data) => {
+        socket.to(data.to).emit('ice candidate', {
+            candidate: data.candidate,
+            from: socket.id
+        });
+    });
+
+    socket.on('speaking', (speaking) => {
+        // Broadcast to all other users if this user is speaking
+        socket.broadcast.emit('user speaking', {
+            userId: socket.id,
+            speaking: speaking
+        });
+    });
+    
+    // Handle detailed sync from admin
+    socket.on('detailed sync', (data) => {
+        // Only admin can send detailed sync
+        if (socket.id === adminUser) {
+            // Update stored video state
+            videoState.playing = data.state === 1;
+            videoState.currentTime = data.time;
+            
+            // Broadcast to all other users
+            socket.broadcast.emit('detailed sync', data);
+        }
+    });
+    
     // Handle disconnection
     socket.on('disconnect', () => {
         if (users[socket.id]) {
@@ -175,10 +244,18 @@ io.on('connection', (socket) => {
             
             delete users[socket.id];
         }
+        
+        // Clean up voice chat if user was in it
+        if (voiceChatUsers[socket.id]) {
+            delete voiceChatUsers[socket.id];
+            io.emit('user left voice', socket.id);
+        }
+        
         console.log('A user disconnected');
     });
 });
 
-server.listen(3000, () => {
-    console.log('Server is running on http://localhost:3000');
+const PORT = process.env.PORT || 3000;
+server.listen(PORT, () => {
+  console.log(`Server is running on port ${PORT}`);
 });

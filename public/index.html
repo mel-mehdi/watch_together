@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>WhatsApp Style Chat with Video</title>
+    <title>Watch To niga</title>
     <!-- Add FontAwesome for icons -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
     <!-- Link to external CSS file -->
@@ -37,7 +37,19 @@
                 <ul id="messages"></ul>
             </div>
             
+            <!-- Voice status indicators above the form -->
+            <div class="users-in-call" id="users-in-call"></div>
+            
             <form id="form" action="">
+                <!-- Voice chat button now inside the form -->
+                <div class="voice-chat-controls">
+                    <!-- Just the icon, no text -->
+                    <button id="voice-chat-toggle" class="voice-chat-btn">
+                        <i class="fas fa-microphone"></i>
+                    </button>
+                    <div class="voice-status" id="voice-status">Voice chat inactive</div>
+                </div>
+                
                 <input id="input" autocomplete="off" placeholder="Type a message..." />
                 <button id="send"><i class="fas fa-paper-plane"></i></button>
             </form>
@@ -53,7 +65,7 @@
             </div>
             <div class="video-controls">
                 <input type="text" class="video-url-input" id="video-url" 
-                    placeholder="Enter YouTube video URL (e.g., https://www.youtube.com/watch?v=dQw4w9WgXcQ)">
+                    placeholder="Enter YouTube video URL (e.g., https://www.youtube.com/">
                 <button class="change-video-btn" id="change-video">Change Video</button>
             </div>
             <div class="admin-controls" id="admin-controls">
