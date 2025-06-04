@@ -171,7 +171,8 @@ function setupYouTubeControlAPI() {
     console.log("YouTube player control API is set up");
 }
 
-// Add a function to listen for YouTube iframe events
+// Improve the YouTube event listener to handle edge cases
+
 function setupYouTubeEventListeners() {
     window.addEventListener('message', (event) => {
         if (event.origin !== "https://www.youtube.com") return;
@@ -181,15 +182,26 @@ function setupYouTubeEventListeners() {
             
             // Only react to YouTube API events
             if (data.event && data.event === "onStateChange") {
+                // Update our internal state tracker
                 player.playerState = data.info;
+                
+                // If this is the video ending (state 0), don't restart it automatically
+                if (data.info === 0) {
+                    console.log("Video ended naturally");
+                    return;
+                }
                 
                 // Only the admin should control the video for everyone
                 if (isAdmin && !ignoreEvents) {
                     if (data.info === 1) { // playing
                         player.getCurrentTime().then(time => {
+                            // Check if we're at the very beginning (natural autoplay or manual play)
+                            const isAutoplayOrManualStart = time < 1;
+                            
                             socket.emit('video play', time);
                             socket.emit('admin action', 'play');
-                            console.log("Admin auto-detected play, time:", time);
+                            console.log("Admin auto-detected play, time:", time, 
+                                        isAutoplayOrManualStart ? "(video start)" : "(mid-video)");
                         });
                     } else if (data.info === 2) { // paused
                         player.getCurrentTime().then(time => {
@@ -240,9 +252,8 @@ function startContinuousSync() {
             // Get current state and time
             Promise.all([player.getCurrentTime(), player.getPlayerState()])
                 .then(([currentTime, playerState]) => {
-                    // Only send updates when there's a significant change
-                    if (Math.abs(currentTime - lastKnownAdminTime) > 0.5 || 
-                        Date.now() - lastSyncTime > 10000) { // Force update every 10 seconds
+                    // Always send updates, but with a minimum interval
+                    if (Date.now() - lastSyncTime > 5000) { // Send update at least every 5 seconds
                         
                         lastKnownAdminTime = currentTime;
                         lastSyncTime = Date.now();
@@ -256,12 +267,28 @@ function startContinuousSync() {
                         
                         console.log("Admin sending detailed sync:", {
                             time: currentTime,
-                            state: playerState
+                            state: playerState,
+                            playing: playerState === 1 ? "yes" : "no"
                         });
                     }
                 })
                 .catch(err => {
                     console.error("Error during continuous sync:", err);
+                    // Attempt to get state individually if the combined approach fails
+                    player.getCurrentTime()
+                        .then(time => {
+                            player.getPlayerState()
+                                .then(state => {
+                                    socket.emit('detailed sync', {
+                                        time: time,
+                                        state: state,
+                                        timestamp: Date.now()
+                                    });
+                                    console.log("Fallback sync sent");
+                                })
+                                .catch(e => console.error("Couldn't get player state:", e));
+                        })
+                        .catch(e => console.error("Couldn't get current time:", e));
                 });
         }
     }, SYNC_INTERVAL_MS);
@@ -343,7 +370,11 @@ socket.on('video state', (state) => {
     // Wait for player to initialize then set the correct time and play state
     setTimeout(() => {
         if (player) {
-            player.seekTo(state.currentTime);
+            console.log("Setting initial video state:", state);
+            
+            // Make sure we have a valid time (prevent setting to 0 if video is in progress)
+            const timeToSet = state.currentTime > 0 ? state.currentTime : 0;
+            player.seekTo(timeToSet);
             
             // Set play state after seeking
             setTimeout(() => {
@@ -352,7 +383,7 @@ socket.on('video state', (state) => {
                 }
             }, 500);
         }
-    }, 1000); // Give some time for player to initialize
+    }, 1500); // Give more time for player to initialize
 });
 
 socket.on('change video', (url) => {
@@ -838,3 +869,67 @@ const tag = document.createElement('script');
 tag.src = "https://www.youtube.com/iframe_api";
 const firstScriptTag = document.getElementsByTagName('script')[0];
 firstScriptTag.parentNode.insertBefore(tag, firstScriptTag);
+
+// Add this event handler after your other socket.on events
+
+// Handle detailed sync data from admin
+socket.on('detailed sync', (data) => {
+    if (!isAdmin && player) {
+        console.log("Received detailed sync:", data);
+        
+        // Make sure data has timestamp
+        if (!data.timestamp) {
+            data.timestamp = Date.now();
+            console.log("Missing timestamp in sync data, using current time");
+        }
+        
+        // Calculate any network delay compensation if needed
+        const networkDelay = Date.now() - data.timestamp;
+        console.log("Network delay:", networkDelay, "ms");
+        
+        // Set ignore flag to prevent event feedback loops
+        ignoreEvents = true;
+        
+        // First update the time if it's significantly different
+        player.getCurrentTime().then(currentTime => {
+            // Check if we're at the beginning but admin is not (prevents unexpected restarts)
+            const userIsAtStart = currentTime < 1;
+            const adminIsWellAhead = data.time > 5;
+            
+            // If user is at start but admin is not, this is likely an unwanted restart
+            if (userIsAtStart && adminIsWellAhead) {
+                console.log("Preventing unwanted restart. Syncing to admin time:", data.time);
+                player.seekTo(data.time);
+            } 
+            // Regular sync case - only seek if we're more than 3 seconds out of sync
+            else if (Math.abs(currentTime - data.time) > 3) {
+                console.log("Syncing time from", currentTime, "to", data.time);
+                player.seekTo(data.time);
+            }
+            
+            // Then set the correct playing state, but only if different
+            setTimeout(() => {
+                // Only change state if necessary
+                if (data.state === 1 && player.playerState !== 1) {
+                    // Admin is playing but we're not
+                    console.log("Syncing state to PLAYING");
+                    player.playVideo();
+                } else if (data.state !== 1 && player.playerState === 1) {
+                    // Admin is not playing but we are
+                    console.log("Syncing state to PAUSED");
+                    player.pauseVideo();
+                } else {
+                    console.log("No state change needed, current state:", player.playerState);
+                }
+                
+                // Reset ignore flag after operations complete
+                setTimeout(() => {
+                    ignoreEvents = false;
+                }, 500);
+            }, 500);
+        }).catch(err => {
+            console.error("Error during sync:", err);
+            ignoreEvents = false;
+        });
+    }
+});
