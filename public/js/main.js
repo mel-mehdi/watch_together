@@ -6,6 +6,7 @@ const usernameModal = document.getElementById('username-modal');
 const usernameInput = document.getElementById('username-input');
 const usernameSubmit = document.getElementById('username-submit');
 const videoPlayer = document.getElementById('video-player');
+const directVideoPlayer = document.getElementById('direct-video-player');
 const videoUrlInput = document.getElementById('video-url');
 const changeVideoBtn = document.getElementById('change-video');
 const adminControls = document.getElementById('admin-controls');
@@ -28,11 +29,13 @@ let username = '';
 let isAdmin = false;
 let currentAdminUser = '';
 let requestingUserId = '';
-let player;
+let player = null;
+let vimeoPlayer = null;
 let ignoreEvents = false;
 let localStream = null;
 let peerConnections = {};
 let isInVoiceChat = false;
+let currentVideoType = ''; // youtube, vimeo, direct, etc.
 
 // Add these variables at the top with your other variables
 let syncInterval;
@@ -40,18 +43,105 @@ const SYNC_INTERVAL_MS = 5000; // Sync every 5 seconds
 let lastKnownAdminTime = 0;
 let lastSyncTime = 0;
 
-// Create a better YouTube player object
-function onYouTubeIframeAPIReady() {
-    console.log("YouTube API is ready");
+// Function to detect video type from URL
+function detectVideoType(url) {
+    if (!url) return null;
     
-    // If we already have a video URL, initialize the player
-    if (videoPlayer.src) {
-        setupYouTubeControlAPI();
+    url = url.trim();
+    
+    // YouTube
+    if (url.includes('youtube.com/watch') || url.includes('youtu.be/')) {
+        return 'youtube';
     }
+    
+    // Vimeo
+    if (url.includes('vimeo.com/')) {
+        return 'vimeo';
+    }
+    
+    // Direct video files
+    if (url.match(/\.(mp4|webm|ogg|mov)($|\?)/i)) {
+        return 'direct';
+    }
+    
+    // Facebook
+    if (url.includes('facebook.com/') && url.includes('/videos/')) {
+        return 'facebook';
+    }
+    
+    // Twitch
+    if (url.includes('twitch.tv/')) {
+        return 'twitch';
+    }
+    
+    // Dailymotion
+    if (url.includes('dailymotion.com/') || url.includes('dai.ly/')) {
+        return 'dailymotion';
+    }
+    
+    // If we can't determine the type but it ends with a common video extension
+    if (url.match(/\.(mp4|webm|ogg|mov)($|\?)/i)) {
+        return 'direct';
+    }
+    
+    // For other URLs, try to use iframe embedding as a fallback
+    return 'iframe';
 }
 
 // Initialize player with video URL
 function initializePlayer(videoUrl) {
+    // Reset players
+    if (player) {
+        player = null;
+    }
+    
+    if (vimeoPlayer) {
+        vimeoPlayer.destroy();
+        vimeoPlayer = null;
+    }
+    
+    // Hide both players initially
+    videoPlayer.style.display = 'none';
+    directVideoPlayer.style.display = 'none';
+    
+    // Detect the video type
+    currentVideoType = detectVideoType(videoUrl);
+    console.log("Detected video type:", currentVideoType);
+    
+    switch (currentVideoType) {
+        case 'youtube':
+            setupYouTubePlayer(videoUrl);
+            break;
+        
+        case 'vimeo':
+            setupVimeoPlayer(videoUrl);
+            break;
+        
+        case 'direct':
+            setupDirectVideoPlayer(videoUrl);
+            break;
+            
+        case 'facebook':
+            setupFacebookPlayer(videoUrl);
+            break;
+            
+        case 'twitch':
+            setupTwitchPlayer(videoUrl);
+            break;
+            
+        case 'dailymotion':
+            setupDailymotionPlayer(videoUrl);
+            break;
+            
+        case 'iframe':
+        default:
+            setupGenericIframePlayer(videoUrl);
+            break;
+    }
+}
+
+// Setup YouTube player
+function setupYouTubePlayer(videoUrl) {
     // Extract video ID from URL
     let videoId = videoUrl;
     if (videoUrl.includes('youtube.com/watch?v=')) {
@@ -66,9 +156,260 @@ function initializePlayer(videoUrl) {
     
     // Set iframe src with video ID and enable API and JS origin
     videoPlayer.src = `https://www.youtube.com/embed/${videoId}?enablejsapi=1&origin=${window.location.origin}`;
+    videoPlayer.style.display = 'block';
     
     // Setup the player control API after the iframe is loaded
     videoPlayer.onload = setupYouTubeControlAPI;
+}
+
+// Setup Vimeo player
+function setupVimeoPlayer(videoUrl) {
+    // Extract Vimeo ID
+    const vimeoId = videoUrl.split('vimeo.com/')[1];
+    
+    // Create new Vimeo player
+    videoPlayer.src = `https://player.vimeo.com/video/${vimeoId}?api=1`;
+    videoPlayer.style.display = 'block';
+    
+    // Initialize Vimeo API
+    videoPlayer.onload = () => {
+        vimeoPlayer = new Vimeo.Player(videoPlayer);
+        
+        // Create a simplified player interface that works like the YouTube one
+        player = {
+            playerState: 2, // Default to paused
+            
+            getCurrentTime: function() {
+                return vimeoPlayer.getCurrentTime();
+            },
+            
+            getPlayerState: function() {
+                return new Promise((resolve) => {
+                    vimeoPlayer.getPaused().then(paused => {
+                        player.playerState = paused ? 2 : 1;
+                        resolve(player.playerState);
+                    });
+                });
+            },
+            
+            seekTo: function(time) {
+                vimeoPlayer.setCurrentTime(time);
+            },
+            
+            playVideo: function() {
+                vimeoPlayer.play();
+                player.playerState = 1;
+            },
+            
+            pauseVideo: function() {
+                vimeoPlayer.pause();
+                player.playerState = 2;
+            }
+        };
+        
+        // Setup event listeners
+        vimeoPlayer.on('play', () => {
+            player.playerState = 1;
+            if (isAdmin && !ignoreEvents) {
+                vimeoPlayer.getCurrentTime().then(time => {
+                    socket.emit('video play', time);
+                    socket.emit('admin action', 'play');
+                });
+            }
+        });
+        
+        vimeoPlayer.on('pause', () => {
+            player.playerState = 2;
+            if (isAdmin && !ignoreEvents) {
+                vimeoPlayer.getCurrentTime().then(time => {
+                    socket.emit('video pause', time);
+                    socket.emit('admin action', 'pause');
+                });
+            }
+        });
+        
+        vimeoPlayer.on('seeked', () => {
+            if (isAdmin && !ignoreEvents) {
+                vimeoPlayer.getCurrentTime().then(time => {
+                    socket.emit('video seek', time);
+                });
+            }
+        });
+    };
+}
+
+// Setup direct video player (MP4, WebM, etc.)
+function setupDirectVideoPlayer(videoUrl) {
+    // Hide iframe, show video element
+    videoPlayer.style.display = 'none';
+    directVideoPlayer.style.display = 'block';
+    
+    // Set video source
+    directVideoPlayer.querySelector('source').src = videoUrl;
+    directVideoPlayer.load();
+    
+    // Create a simplified player interface
+    player = {
+        playerState: 2, // Default to paused
+        
+        getCurrentTime: function() {
+            return Promise.resolve(directVideoPlayer.currentTime);
+        },
+        
+        getPlayerState: function() {
+            return Promise.resolve(directVideoPlayer.paused ? 2 : 1);
+        },
+        
+        seekTo: function(time) {
+            directVideoPlayer.currentTime = time;
+        },
+        
+        playVideo: function() {
+            directVideoPlayer.play();
+            player.playerState = 1;
+        },
+        
+        pauseVideo: function() {
+            directVideoPlayer.pause();
+            player.playerState = 2;
+        }
+    };
+    
+    // Add event listeners
+    directVideoPlayer.addEventListener('play', () => {
+        player.playerState = 1;
+        if (isAdmin && !ignoreEvents) {
+            socket.emit('video play', directVideoPlayer.currentTime);
+            socket.emit('admin action', 'play');
+        }
+    });
+    
+    directVideoPlayer.addEventListener('pause', () => {
+        player.playerState = 2;
+        if (isAdmin && !ignoreEvents) {
+            socket.emit('video pause', directVideoPlayer.currentTime);
+            socket.emit('admin action', 'pause');
+        }
+    });
+    
+    directVideoPlayer.addEventListener('seeked', () => {
+        if (isAdmin && !ignoreEvents) {
+            socket.emit('video seek', directVideoPlayer.currentTime);
+        }
+    });
+}
+
+// Setup Facebook Video player
+function setupFacebookPlayer(videoUrl) {
+    // Extract Facebook video ID if possible
+    let videoId = videoUrl;
+    if (videoUrl.includes('/videos/')) {
+        const parts = videoUrl.split('/videos/');
+        if (parts.length > 1) {
+            videoId = parts[1].split('/')[0].split('?')[0];
+        }
+    }
+    
+    // Set iframe src
+    videoPlayer.src = `https://www.facebook.com/plugins/video.php?href=${encodeURIComponent(videoUrl)}&show_text=0&width=560&height=315`;
+    videoPlayer.style.display = 'block';
+    
+    // Facebook doesn't have a good API for controlling videos in iframes
+    // So we'll create a simplified player with limited functionality
+    player = createLimitedControlPlayer();
+}
+
+// Setup Twitch player
+function setupTwitchPlayer(videoUrl) {
+    // Extract channel or video ID
+    let channelName = '';
+    let videoId = '';
+    
+    if (videoUrl.includes('twitch.tv/videos/')) {
+        // It's a VOD
+        videoId = videoUrl.split('twitch.tv/videos/')[1].split('?')[0];
+        videoPlayer.src = `https://player.twitch.tv/?video=v${videoId}&parent=${window.location.hostname}`;
+    } else {
+        // It's a channel
+        channelName = videoUrl.split('twitch.tv/')[1].split('?')[0].split('/')[0];
+        videoPlayer.src = `https://player.twitch.tv/?channel=${channelName}&parent=${window.location.hostname}`;
+    }
+    
+    videoPlayer.style.display = 'block';
+    
+    // Twitch doesn't have a simple API for controlling videos in iframes
+    player = createLimitedControlPlayer();
+}
+
+// Setup Dailymotion player
+function setupDailymotionPlayer(videoUrl) {
+    // Extract video ID
+    let videoId = '';
+    
+    if (videoUrl.includes('dailymotion.com/video/')) {
+        videoId = videoUrl.split('dailymotion.com/video/')[1].split('?')[0];
+    } else if (videoUrl.includes('dai.ly/')) {
+        videoId = videoUrl.split('dai.ly/')[1].split('?')[0];
+    }
+    
+    videoPlayer.src = `https://www.dailymotion.com/embed/video/${videoId}`;
+    videoPlayer.style.display = 'block';
+    
+    // Dailymotion doesn't have a simple API for controlling videos in iframes
+    player = createLimitedControlPlayer();
+}
+
+// Setup generic iframe for other video sources
+function setupGenericIframePlayer(videoUrl) {
+    // Just set the iframe src to the provided URL
+    videoPlayer.src = videoUrl;
+    videoPlayer.style.display = 'block';
+    
+    // Create a limited control player
+    player = createLimitedControlPlayer();
+}
+
+// Create a limited control player for platforms without good API support
+function createLimitedControlPlayer() {
+    return {
+        playerState: 2, // Default to paused
+        
+        getCurrentTime: function() {
+            return Promise.resolve(0); // We can't get the current time
+        },
+        
+        getPlayerState: function() {
+            return Promise.resolve(player.playerState);
+        },
+        
+        seekTo: function(time) {
+            console.log("Seek functionality not available for this video type");
+        },
+        
+        playVideo: function() {
+            console.log("Attempting to play video via iframe reload");
+            // For most platforms, we can't control playback directly
+            // So we just reload the iframe which usually starts playback
+            const currentSrc = videoPlayer.src;
+            videoPlayer.src = currentSrc;
+            player.playerState = 1;
+        },
+        
+        pauseVideo: function() {
+            console.log("Pause functionality not available for this video type");
+            player.playerState = 2;
+        }
+    };
+}
+
+// Create a better YouTube player object
+function onYouTubeIframeAPIReady() {
+    console.log("YouTube API is ready");
+    
+    // If we already have a video URL and it's YouTube, initialize the player
+    if (videoPlayer.src && currentVideoType === 'youtube') {
+        setupYouTubeControlAPI();
+    }
 }
 
 // Setup the YouTube player control API
@@ -172,7 +513,6 @@ function setupYouTubeControlAPI() {
 }
 
 // Improve the YouTube event listener to handle edge cases
-
 function setupYouTubeEventListeners() {
     window.addEventListener('message', (event) => {
         if (event.origin !== "https://www.youtube.com") return;
@@ -374,14 +714,18 @@ socket.on('video state', (state) => {
             
             // Make sure we have a valid time (prevent setting to 0 if video is in progress)
             const timeToSet = state.currentTime > 0 ? state.currentTime : 0;
-            player.seekTo(timeToSet);
             
-            // Set play state after seeking
-            setTimeout(() => {
-                if (state.playing) {
-                    player.playVideo();
-                }
-            }, 500);
+            // Only attempt to seek if the player type supports it
+            if (currentVideoType === 'youtube' || currentVideoType === 'vimeo' || currentVideoType === 'direct') {
+                player.seekTo(timeToSet);
+                
+                // Set play state after seeking
+                setTimeout(() => {
+                    if (state.playing) {
+                        player.playVideo();
+                    }
+                }, 500);
+            }
         }
     }, 1500); // Give more time for player to initialize
 });
@@ -405,28 +749,34 @@ socket.on('video play', (data) => {
     
     console.log("Video play event received, time:", time);
     
-    // Only seek if the time difference is significant
-    player.getCurrentTime().then(currentPlayerTime => {
-        if (Math.abs(time - currentPlayerTime) > 1) {
+    // Only seek if supported and the time difference is significant
+    if (currentVideoType === 'youtube' || currentVideoType === 'vimeo' || currentVideoType === 'direct') {
+        player.getCurrentTime().then(currentPlayerTime => {
+            if (Math.abs(time - currentPlayerTime) > 1) {
+                player.seekTo(time);
+                setTimeout(() => {
+                    player.playVideo();
+                    ignoreEvents = false;
+                }, 500);
+            } else {
+                // If time is close enough, just play without seeking
+                player.playVideo();
+                ignoreEvents = false;
+            }
+        }).catch(err => {
+            console.error("Error getting current time:", err);
+            // Fallback if we can't get current time
             player.seekTo(time);
             setTimeout(() => {
                 player.playVideo();
                 ignoreEvents = false;
             }, 500);
-        } else {
-            // If time is close enough, just play without seeking
-            player.playVideo();
-            ignoreEvents = false;
-        }
-    }).catch(err => {
-        console.error("Error getting current time:", err);
-        // Fallback if we can't get current time
-        player.seekTo(time);
-        setTimeout(() => {
-            player.playVideo();
-            ignoreEvents = false;
-        }, 500);
-    });
+        });
+    } else {
+        // For platforms without good control, just try to play
+        player.playVideo();
+        ignoreEvents = false;
+    }
     
     // Show visual indicator for non-admins
     if (!isAdmin) {

@@ -14,13 +14,53 @@ const users = {};
 let videoState = {
     url: '', // Default video
     playing: false,
-    currentTime: 0
+    currentTime: 0,
+    videoType: 'unknown'
 };
 // Store admin user
 let adminUser = null;
 
 // Voice chat users
 const voiceChatUsers = {};
+
+function detectVideoType(url) {
+    if (!url) return 'unknown';
+    
+    url = url.trim();
+    
+    // YouTube
+    if (url.includes('youtube.com/watch') || url.includes('youtu.be/')) {
+        return 'youtube';
+    }
+    
+    // Vimeo
+    if (url.includes('vimeo.com/')) {
+        return 'vimeo';
+    }
+    
+    // Direct video files
+    if (url.match(/\.(mp4|webm|ogg|mov)($|\?)/i)) {
+        return 'direct';
+    }
+    
+    // Facebook
+    if (url.includes('facebook.com/') && url.includes('/videos/')) {
+        return 'facebook';
+    }
+    
+    // Twitch
+    if (url.includes('twitch.tv/')) {
+        return 'twitch';
+    }
+    
+    // Dailymotion
+    if (url.includes('dailymotion.com/') || url.includes('dai.ly/')) {
+        return 'dailymotion';
+    }
+    
+    // For other URLs, try to use iframe embedding as a fallback
+    return 'iframe';
+}
 
 io.on('connection', (socket) => {
     console.log('A user connected');
@@ -29,7 +69,8 @@ io.on('connection', (socket) => {
     socket.emit('video state', {
         url: videoState.url,
         playing: videoState.playing,
-        currentTime: videoState.currentTime // Include the current time
+        currentTime: videoState.currentTime,
+        videoType: videoState.videoType
     });
     
     // Handle user joining with username
@@ -124,6 +165,8 @@ io.on('connection', (socket) => {
             videoState.url = url;
             videoState.currentTime = 0;
             videoState.playing = false;
+            videoState.videoType = detectVideoType(url);
+            
             io.emit('change video', url);
             io.emit('system message', `${users[socket.id].username} changed the video`);
         }
