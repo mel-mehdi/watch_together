@@ -78,6 +78,11 @@ app.use('/api/rooms', roomRoutes);
 app.use('/api/db', dbRoutes);
 app.use('/admin', adminRoutes);
 
+// Serve join page for invite links
+app.get('/join', (req, res) => {
+    res.sendFile(__dirname + '/public/join.html');
+});
+
 // Store connected users with enhanced user data
 const users = {};
 // Store current video state
@@ -92,6 +97,38 @@ let adminUser = null;
 
 // Voice chat users
 const voiceChatUsers = {};
+
+// Save queue to prevent parallel saves
+const saveQueue = new Map();
+let saveTimeout = null;
+
+// Debounced save function for defaultRoom
+async function saveDefaultRoom() {
+    if (!defaultRoom || !isDatabaseConnected) return;
+    
+    // Clear any existing timeout
+    if (saveTimeout) {
+        clearTimeout(saveTimeout);
+    }
+    
+    // Set a new timeout to save after a short delay
+    saveTimeout = setTimeout(async () => {
+        try {
+            if (defaultRoom && defaultRoom.isModified()) {
+                defaultRoom.videoState.lastUpdated = new Date();
+                await defaultRoom.save();
+                console.log('Default room saved successfully');
+            }
+        } catch (error) {
+            console.error('Error saving default room:', error);
+            // If it's a parallel save error, retry after a short delay
+            if (error.name === 'ParallelSaveError') {
+                setTimeout(saveDefaultRoom, 100);
+            }
+        }
+        saveTimeout = null;
+    }, 50); // Save after 50ms delay to batch multiple updates
+}
 
 // Create or get default room
 let defaultRoom;
@@ -205,8 +242,13 @@ io.on('connection', async (socket) => {
                 
                 // If user doesn't exist, create a new one as guest
                 if (!user) {
+                    // Generate a unique email for guest users to avoid duplicate key errors
+                    // Use .com domain to match the email validation regex
+                    const guestEmail = `${username.toLowerCase().replace(/[^a-z0-9]/g, '')}_${Date.now()}@guest.com`;
+                    
                     user = new User({ 
                         username, 
+                        email: guestEmail,
                         isGuest: true 
                     });
                     await user.save();
@@ -245,7 +287,7 @@ io.on('connection', async (socket) => {
             if (isDatabaseConnected && defaultRoom) {
                 try {
                     defaultRoom.adminUser = userId;
-                    await defaultRoom.save();
+                    saveDefaultRoom();
                 } catch (error) {
                     console.error('Database error updating admin in room:', error.message);
                 }
@@ -358,8 +400,7 @@ io.on('connection', async (socket) => {
             if (defaultRoom) {
                 defaultRoom.videoState.playing = true;
                 defaultRoom.videoState.currentTime = time;
-                defaultRoom.videoState.lastUpdated = new Date();
-                await defaultRoom.save();
+                saveDefaultRoom();
             }
             
             // Include server timestamp to help with synchronization
@@ -387,8 +428,7 @@ io.on('connection', async (socket) => {
             if (defaultRoom) {
                 defaultRoom.videoState.playing = false;
                 defaultRoom.videoState.currentTime = time;
-                defaultRoom.videoState.lastUpdated = new Date();
-                await defaultRoom.save();
+                saveDefaultRoom();
             }
             
             // Include server timestamp to help with synchronization
@@ -414,8 +454,7 @@ io.on('connection', async (socket) => {
             // Update database
             if (defaultRoom) {
                 defaultRoom.videoState.currentTime = time;
-                defaultRoom.videoState.lastUpdated = new Date();
-                await defaultRoom.save();
+                saveDefaultRoom();
             }
             
             socket.broadcast.emit('video seek', time);
@@ -431,8 +470,7 @@ io.on('connection', async (socket) => {
             // Update database
             if (defaultRoom) {
                 defaultRoom.videoState.currentTime = time;
-                defaultRoom.videoState.lastUpdated = new Date();
-                await defaultRoom.save();
+                saveDefaultRoom();
             }
             
             socket.broadcast.emit('sync time', time);
@@ -467,7 +505,7 @@ io.on('connection', async (socket) => {
                     currentTime: 0,
                     lastUpdated: new Date()
                 };
-                await defaultRoom.save();
+                saveDefaultRoom();
                 
                 // Save to video history
                 const videoHistory = new VideoHistory({
@@ -626,7 +664,7 @@ io.on('connection', async (socket) => {
                     // Update database with new admin
                     if (defaultRoom && users[adminUser]) {
                         defaultRoom.adminUser = users[adminUser].userId;
-                        await defaultRoom.save();
+                        saveDefaultRoom();
                     }
                     
                     // Notify new admin and all users

@@ -1725,16 +1725,33 @@ function initializeAuth() {
         }
         console.log('  🔗 Showing username modal (fallback to guest)');
     }
-    // If user is in guest mode, show username modal
+    // If user is in guest mode, check if they already have userData (from invite join)
     else if (isGuestMode) {
         console.log('  👤 User is in guest mode');
         
-        // Show username modal
-        const usernameModal = document.getElementById('username-modal');
-        if (usernameModal) {
-            usernameModal.style.display = 'flex';
+        // If user already has userData (from invite join), use it
+        if (userData && userData.username) {
+            console.log('  ✅ Guest user has existing data:', userData.username);
+            username = userData.username;
+            
+            // Hide the username modal
+            const usernameModal = document.getElementById('username-modal');
+            if (usernameModal) {
+                usernameModal.style.display = 'none';
+            }
+            
+            // Join socket with username
+            socket.emit('user join', username);
+            updateUserInterface();
+            console.log('  🔗 Socket joined with existing guest username:', username);
+        } else {
+            // Show username modal for new guest users
+            const usernameModal = document.getElementById('username-modal');
+            if (usernameModal) {
+                usernameModal.style.display = 'flex';
+            }
+            console.log('  🔗 Showing username modal (new guest user)');
         }
-        console.log('  🔗 Showing username modal (guest mode)');
     } 
     // If not authenticated and not guest, redirect to login
     else {

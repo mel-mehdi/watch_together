@@ -505,6 +505,8 @@
                     // Store user info if guest
                     if (result.user && result.user.isGuest) {
                         localStorage.setItem('guestUser', JSON.stringify(result.user));
+                        localStorage.setItem('guestMode', 'true'); // Set guest mode flag
+                        localStorage.setItem('userData', JSON.stringify(result.user)); // Store user data for main page
                     }
                     
                     setTimeout(() => {

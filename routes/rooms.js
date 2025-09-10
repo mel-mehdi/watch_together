@@ -8,9 +8,18 @@ const router = express.Router();
 // Get room info
 router.get('/:roomId', async (req, res) => {
     try {
-        const room = await Room.findById(req.params.roomId)
-            .populate('adminUser', 'username avatar')
-            .populate('users', 'username avatar isOnline');
+        let room;
+        
+        // Handle special case for "default" room
+        if (req.params.roomId === 'default') {
+            room = await Room.findOne({ name: 'Default Room' })
+                .populate('adminUser', 'username avatar')
+                .populate('users', 'username avatar isOnline');
+        } else {
+            room = await Room.findById(req.params.roomId)
+                .populate('adminUser', 'username avatar')
+                .populate('users', 'username avatar isOnline');
+        }
 
         if (!room) {
             return res.status(404).json({ 
@@ -47,7 +56,14 @@ router.get('/:roomId', async (req, res) => {
 // Generate invite link for room
 router.post('/:roomId/invite', authenticateToken, async (req, res) => {
     try {
-        const room = await Room.findById(req.params.roomId);
+        let room;
+        
+        // Handle special case for "default" room
+        if (req.params.roomId === 'default') {
+            room = await Room.findOne({ name: 'Default Room' });
+        } else {
+            room = await Room.findById(req.params.roomId);
+        }
 
         if (!room) {
             return res.status(404).json({ 
@@ -145,8 +161,13 @@ router.post('/join/:inviteCode', async (req, res) => {
                 });
             }
 
+            // Generate a unique email for guest users to avoid duplicate key errors
+            // Use .com domain to match the email validation regex
+            const guestEmail = `${guestUsername.toLowerCase().replace(/[^a-z0-9]/g, '')}_${Date.now()}@guest.com`;
+            
             user = new User({
                 username: guestUsername,
+                email: guestEmail,
                 isGuest: true
             });
             await user.save();
@@ -230,7 +251,14 @@ router.get('/invite/:inviteCode', async (req, res) => {
 // Revoke invite link
 router.delete('/:roomId/invite', authenticateToken, async (req, res) => {
     try {
-        const room = await Room.findById(req.params.roomId);
+        let room;
+        
+        // Handle special case for "default" room
+        if (req.params.roomId === 'default') {
+            room = await Room.findOne({ name: 'Default Room' });
+        } else {
+            room = await Room.findById(req.params.roomId);
+        }
 
         if (!room) {
             return res.status(404).json({ 

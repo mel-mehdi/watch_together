@@ -241,7 +241,6 @@ function setupVimeoPlayer(videoUrl) {
             if (isAdmin && !ignoreEvents) {
                 vimeoPlayer.getCurrentTime().then(time => {
                     socket.emit('video play', time);
-                    socket.emit('admin action', 'play');
                 });
             }
         });
@@ -251,7 +250,6 @@ function setupVimeoPlayer(videoUrl) {
             if (isAdmin && !ignoreEvents) {
                 vimeoPlayer.getCurrentTime().then(time => {
                     socket.emit('video pause', time);
-                    socket.emit('admin action', 'pause');
                 });
             }
         });
@@ -308,7 +306,6 @@ function setupDirectVideoPlayer(videoUrl) {
         player.playerState = 1;
         if (isAdmin && !ignoreEvents) {
             socket.emit('video play', directVideoPlayer.currentTime);
-            socket.emit('admin action', 'play');
         }
     });
     
@@ -316,7 +313,6 @@ function setupDirectVideoPlayer(videoUrl) {
         player.playerState = 2;
         if (isAdmin && !ignoreEvents) {
             socket.emit('video pause', directVideoPlayer.currentTime);
-            socket.emit('admin action', 'pause');
         }
     });
     
@@ -567,14 +563,12 @@ function setupYouTubeEventListeners() {
                             const isAutoplayOrManualStart = time < 1;
                             
                             socket.emit('video play', time);
-                            socket.emit('admin action', 'play');
                             console.log("Admin auto-detected play, time:", time, 
                                         isAutoplayOrManualStart ? "(video start)" : "(mid-video)");
                         });
                     } else if (data.info === 2) { // paused
                         player.getCurrentTime().then(time => {
                             socket.emit('video pause', time);
-                            socket.emit('admin action', 'pause');
                             console.log("Admin auto-detected pause, time:", time);
                         });
                     }
@@ -938,15 +932,6 @@ socket.on('video play', (data) => {
         player.playVideo();
         ignoreEvents = false;
     }
-    
-    // Show visual indicator for non-admins
-    if (!isAdmin) {
-        adminViewingNotice.textContent = "Admin started playback";
-        adminViewingNotice.style.display = 'block';
-        setTimeout(() => {
-            adminViewingNotice.style.display = 'none';
-        }, 3000);
-    }
 });
 
 // Update the video pause event handler
@@ -980,15 +965,6 @@ socket.on('video pause', (data) => {
             ignoreEvents = false;
         }, 500);
     });
-    
-    // Show visual indicator for non-admins
-    if (!isAdmin) {
-        adminViewingNotice.textContent = "Admin paused playback";
-        adminViewingNotice.style.display = 'block';
-        setTimeout(() => {
-            adminViewingNotice.style.display = 'none';
-        }, 3000);
-    }
 });
 
 socket.on('video seek', (time) => {
@@ -1081,7 +1057,6 @@ adminPlayBtn.addEventListener('click', async () => {
             const currentTime = await player.getCurrentTime();
             player.playVideo();
             socket.emit('video play', currentTime);
-            socket.emit('admin action', 'play');
             console.log("Admin play button clicked, current time:", currentTime);
         } catch (e) {
             console.error("Error in admin play:", e);
@@ -1096,7 +1071,6 @@ adminPauseBtn.addEventListener('click', async () => {
             const currentTime = await player.getCurrentTime();
             player.pauseVideo();
             socket.emit('video pause', currentTime);
-            socket.emit('admin action', 'pause');
             console.log("Admin pause button clicked, current time:", currentTime);
         } catch (e) {
             console.error("Error in admin pause:", e);
@@ -1114,22 +1088,10 @@ adminRestartBtn.addEventListener('click', () => {
             }, 500);
             socket.emit('video seek', 0);
             socket.emit('video play', 0);
-            socket.emit('admin action', 'restart');
             console.log("Admin restart button clicked");
         } catch (e) {
             console.error("Error in admin restart:", e);
         }
-    }
-});
-
-// Listen for admin actions for visual cues
-socket.on('admin action', (action) => {
-    if (!isAdmin) {
-        adminViewingNotice.textContent = `Admin ${action}ed the video`;
-        adminViewingNotice.style.display = 'block';
-        setTimeout(() => {
-            adminViewingNotice.style.display = 'none';
-        }, 3000);
     }
 });
 
