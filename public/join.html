@@ -1,0 +1,544 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Join Room - Watch Together</title>
+    <meta name="description" content="Join a Watch Together room and share videos with friends">
+    
+    <!-- Preconnect for performance -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    
+    <!-- Modern Typography -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    
+    <!-- Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <!-- Favicon -->
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎬</text></svg>">
+    
+    <style>
+        /* Design system variables */
+        :root {
+            --primary-color: #7c3aed;
+            --primary-dark: #5b21b6;
+            --primary-light: #a855f7;
+            --accent-color: #06b6d4;
+            --accent-dark: #0891b2;
+            
+            --bg-primary: #0f0f23;
+            --bg-secondary: #1a1a2e;
+            --bg-tertiary: #16213e;
+            --bg-card: #1e1e2e;
+            --bg-overlay: rgba(15, 15, 35, 0.95);
+            
+            --text-primary: #f8fafc;
+            --text-secondary: #cbd5e1;
+            --text-muted: #64748b;
+            --text-accent: #a855f7;
+            
+            --border-color: #334155;
+            --border-light: #475569;
+            --success-color: #10b981;
+            --error-color: #ef4444;
+            --warning-color: #f59e0b;
+            
+            --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.1);
+            --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.2);
+            --shadow-lg: 0 8px 32px rgba(0, 0, 0, 0.3);
+            
+            --radius-sm: 6px;
+            --radius-md: 12px;
+            --radius-lg: 16px;
+            --radius-xl: 24px;
+            
+            --transition-smooth: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            --transition-quick: all 0.15s ease;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, var(--bg-primary) 0%, var(--bg-secondary) 100%);
+            color: var(--text-primary);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+            position: relative;
+            overflow-x: hidden;
+        }
+
+        /* Background particles effect */
+        body::before {
+            content: '';
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-image: 
+                radial-gradient(circle at 20% 80%, rgba(124, 58, 237, 0.1) 0%, transparent 50%),
+                radial-gradient(circle at 80% 20%, rgba(6, 182, 212, 0.1) 0%, transparent 50%),
+                radial-gradient(circle at 40% 40%, rgba(168, 85, 247, 0.05) 0%, transparent 50%);
+            pointer-events: none;
+            z-index: -1;
+        }
+
+        .join-container {
+            width: 100%;
+            max-width: 500px;
+            background: var(--bg-card);
+            border-radius: var(--radius-xl);
+            padding: 40px;
+            box-shadow: var(--shadow-lg);
+            border: 1px solid var(--border-color);
+            backdrop-filter: blur(10px);
+            position: relative;
+        }
+
+        .join-container::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: linear-gradient(135deg, rgba(124, 58, 237, 0.1), rgba(6, 182, 212, 0.1));
+            border-radius: var(--radius-xl);
+            z-index: -1;
+        }
+
+        .room-preview {
+            text-align: center;
+            margin-bottom: 32px;
+            padding: 24px;
+            background: var(--bg-secondary);
+            border-radius: var(--radius-lg);
+            border: 1px solid var(--border-color);
+        }
+
+        .room-icon {
+            width: 64px;
+            height: 64px;
+            background: linear-gradient(135deg, var(--primary-color), var(--accent-color));
+            border-radius: var(--radius-md);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 28px;
+            color: white;
+            margin: 0 auto 16px;
+            animation: float 3s ease-in-out infinite;
+        }
+
+        @keyframes float {
+            0%, 100% { transform: translateY(0px); }
+            50% { transform: translateY(-8px); }
+        }
+
+        .room-name {
+            font-size: 1.5rem;
+            font-weight: 700;
+            margin-bottom: 8px;
+            color: var(--text-primary);
+        }
+
+        .room-details {
+            display: flex;
+            justify-content: space-between;
+            margin-top: 16px;
+            font-size: 14px;
+            color: var(--text-secondary);
+        }
+
+        .room-detail {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .loading-container {
+            text-align: center;
+            padding: 40px;
+        }
+
+        .loading-spinner {
+            width: 40px;
+            height: 40px;
+            border: 3px solid var(--border-color);
+            border-top: 3px solid var(--primary-color);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 16px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .form-group {
+            margin-bottom: 24px;
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 600;
+            color: var(--text-primary);
+            font-size: 14px;
+        }
+
+        .form-group input {
+            width: 100%;
+            padding: 16px 20px;
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-md);
+            color: var(--text-primary);
+            font-size: 16px;
+            transition: var(--transition-smooth);
+            font-family: inherit;
+        }
+
+        .form-group input:focus {
+            outline: none;
+            border-color: var(--primary-color);
+            box-shadow: 0 0 0 3px rgba(124, 58, 237, 0.1);
+            background: var(--bg-tertiary);
+        }
+
+        .form-group input::placeholder {
+            color: var(--text-muted);
+        }
+
+        .join-button {
+            width: 100%;
+            padding: 16px 24px;
+            background: linear-gradient(135deg, var(--primary-color), var(--primary-dark));
+            color: white;
+            border: none;
+            border-radius: var(--radius-md);
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: var(--transition-smooth);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            margin-bottom: 20px;
+            font-family: inherit;
+        }
+
+        .join-button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 25px rgba(124, 58, 237, 0.3);
+        }
+
+        .join-button:active {
+            transform: translateY(0);
+        }
+
+        .join-button:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .guest-join-button {
+            width: 100%;
+            padding: 12px 24px;
+            background: var(--bg-secondary);
+            color: var(--text-secondary);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-md);
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: var(--transition-smooth);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            margin-bottom: 20px;
+            font-family: inherit;
+        }
+
+        .guest-join-button:hover {
+            background: var(--bg-tertiary);
+            border-color: var(--border-light);
+            color: var(--text-primary);
+        }
+
+        .error-message, .success-message {
+            padding: 12px 16px;
+            border-radius: var(--radius-md);
+            font-size: 14px;
+            margin-bottom: 20px;
+            display: none;
+            animation: messageSlideIn 0.3s ease;
+        }
+
+        .error-message {
+            background: rgba(239, 68, 68, 0.1);
+            border: 1px solid var(--error-color);
+            color: var(--error-color);
+        }
+
+        .success-message {
+            background: rgba(16, 185, 129, 0.1);
+            border: 1px solid var(--success-color);
+            color: var(--success-color);
+        }
+
+        @keyframes messageSlideIn {
+            from {
+                opacity: 0;
+                transform: translateY(-10px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .auth-links {
+            text-align: center;
+            margin-top: 24px;
+            padding-top: 24px;
+            border-top: 1px solid var(--border-color);
+        }
+
+        .auth-links a {
+            color: var(--primary-color);
+            text-decoration: none;
+            font-weight: 600;
+            font-size: 14px;
+            transition: var(--transition-smooth);
+            margin: 0 12px;
+        }
+
+        .auth-links a:hover {
+            color: var(--primary-light);
+            text-decoration: underline;
+        }
+
+        /* Mobile responsiveness */
+        @media (max-width: 480px) {
+            .join-container {
+                padding: 24px;
+                margin: 10px;
+            }
+
+            .room-name {
+                font-size: 1.25rem;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="join-container">
+        <!-- Loading State -->
+        <div id="loading-state" class="loading-container">
+            <div class="loading-spinner"></div>
+            <h2>Loading room info...</h2>
+            <p style="color: var(--text-secondary); margin-top: 8px;">Please wait a moment</p>
+        </div>
+
+        <!-- Room Preview -->
+        <div id="room-preview" style="display: none;">
+            <div class="room-preview">
+                <div class="room-icon">
+                    <i class="fas fa-users"></i>
+                </div>
+                <h2 class="room-name" id="room-name">Loading...</h2>
+                <p style="color: var(--text-secondary); margin-bottom: 16px;">
+                    Hosted by <span id="room-admin" style="color: var(--text-accent); font-weight: 600;">Loading...</span>
+                </p>
+                <div class="room-details">
+                    <div class="room-detail">
+                        <i class="fas fa-users"></i>
+                        <span><span id="user-count">0</span>/<span id="max-users">50</span> users</span>
+                    </div>
+                    <div class="room-detail">
+                        <i class="fas fa-play"></i>
+                        <span id="current-video">No video</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="error-message" id="error-message"></div>
+            <div class="success-message" id="success-message"></div>
+
+            <!-- Join Form -->
+            <form id="join-form">
+                <div class="form-group">
+                    <label for="username">Display Name (Optional)</label>
+                    <input type="text" id="username" name="username" 
+                           placeholder="Enter your display name or leave blank for auto-generated" 
+                           maxlength="20">
+                </div>
+                
+                <button type="submit" class="join-button">
+                    <i class="fas fa-sign-in-alt"></i>
+                    Join Room
+                </button>
+                
+                <button type="button" class="guest-join-button" onclick="joinAsGuest()">
+                    <i class="fas fa-user-secret"></i>
+                    Join as Guest
+                </button>
+            </form>
+
+            <div class="auth-links">
+                <a href="/login.html">Sign In</a>
+                <a href="/">Create New Room</a>
+            </div>
+        </div>
+
+        <!-- Error State -->
+        <div id="error-state" style="display: none; text-align: center;">
+            <div style="font-size: 64px; margin-bottom: 20px;">❌</div>
+            <h2 style="margin-bottom: 16px;">Invalid Invite Link</h2>
+            <p style="color: var(--text-secondary); margin-bottom: 24px;">
+                This invite link is either invalid or has expired.
+            </p>
+            <div class="auth-links">
+                <a href="/">← Back to Watch Together</a>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Get invite code from URL
+        function getUrlParameter(name) {
+            name = name.replace(/[\[]/, '\\[').replace(/[\]]/, '\\]');
+            const regex = new RegExp('[\\?&]' + name + '=([^&#]*)');
+            const results = regex.exec(location.search);
+            return results === null ? '' : decodeURIComponent(results[1].replace(/\+/g, ' '));
+        }
+
+        const inviteCode = getUrlParameter('code');
+
+        if (!inviteCode) {
+            showErrorState();
+        } else {
+            loadRoomInfo();
+        }
+
+        function showErrorState() {
+            document.getElementById('loading-state').style.display = 'none';
+            document.getElementById('room-preview').style.display = 'none';
+            document.getElementById('error-state').style.display = 'block';
+        }
+
+        function showError(message) {
+            const errorElement = document.getElementById('error-message');
+            errorElement.textContent = message;
+            errorElement.style.display = 'block';
+            document.getElementById('success-message').style.display = 'none';
+        }
+
+        function showSuccess(message) {
+            const successElement = document.getElementById('success-message');
+            successElement.textContent = message;
+            successElement.style.display = 'block';
+            document.getElementById('error-message').style.display = 'none';
+        }
+
+        function hideMessage() {
+            document.getElementById('error-message').style.display = 'none';
+            document.getElementById('success-message').style.display = 'none';
+        }
+
+        async function loadRoomInfo() {
+            try {
+                const response = await fetch(`/api/rooms/invite/${inviteCode}`);
+                const result = await response.json();
+
+                if (response.ok) {
+                    const room = result.room;
+                    
+                    document.getElementById('room-name').textContent = room.name;
+                    document.getElementById('room-admin').textContent = room.adminUser.username;
+                    document.getElementById('user-count').textContent = room.userCount;
+                    document.getElementById('max-users').textContent = room.maxUsers;
+                    document.getElementById('current-video').textContent = room.currentVideo;
+
+                    document.getElementById('loading-state').style.display = 'none';
+                    document.getElementById('room-preview').style.display = 'block';
+                } else {
+                    showErrorState();
+                }
+            } catch (error) {
+                console.error('Error loading room info:', error);
+                showErrorState();
+            }
+        }
+
+        async function joinRoom(username = null) {
+            try {
+                const response = await fetch(`/api/rooms/join/${inviteCode}`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${localStorage.getItem('token') || ''}`
+                    },
+                    body: JSON.stringify(username ? { username } : {}),
+                });
+
+                const result = await response.json();
+
+                if (response.ok) {
+                    showSuccess('Successfully joined room! Redirecting...');
+                    
+                    // Store user info if guest
+                    if (result.user && result.user.isGuest) {
+                        localStorage.setItem('guestUser', JSON.stringify(result.user));
+                    }
+                    
+                    setTimeout(() => {
+                        window.location.href = `/`;
+                    }, 1500);
+                } else {
+                    showError(result.message || 'Failed to join room');
+                }
+            } catch (error) {
+                showError('Network error. Please try again.');
+            }
+        }
+
+        function joinAsGuest() {
+            joinRoom();
+        }
+
+        // Handle join form submission
+        document.getElementById('join-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const formData = new FormData(e.target);
+            const data = Object.fromEntries(formData);
+
+            const submitButton = e.target.querySelector('.join-button');
+            submitButton.disabled = true;
+            submitButton.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Joining...';
+
+            try {
+                await joinRoom(data.username || null);
+            } finally {
+                submitButton.disabled = false;
+                submitButton.innerHTML = '<i class="fas fa-sign-in-alt"></i> Join Room';
+            }
+        });
+    </script>
+</body>
+</html>

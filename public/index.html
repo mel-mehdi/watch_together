@@ -3,90 +3,259 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Watch Together</title>
-    <!-- Add FontAwesome for icons -->
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
-    <!-- Link to external CSS file -->
+    <title>Watch Together - Share Videos & Chat</title>
+    <meta name="description" content="Watch videos together with friends in real-time. Share YouTube, Vimeo, and direct video links with synchronized playback and live chat.">
+    
+    <!-- Preconnect for performance -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    
+    <!-- Modern Typography -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    
+    <!-- Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <!-- Favicon -->
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎬</text></svg>">
+    
+    <!-- Stylesheets -->
     <link rel="stylesheet" href="/css/styles.css">
 </head>
 <body>
-    <!-- Username modal -->
+    <!-- Username Modal -->
     <div class="username-modal" id="username-modal">
         <div class="modal-content">
-            <h2>Enter your name</h2>
-            <input type="text" id="username-input" placeholder="Your name..." autocomplete="off">
-            <button id="username-submit">Join Chat</button>
+            <h2><i class="fas fa-user-circle"></i> Join the Room</h2>
+            <p style="color: var(--text-secondary); margin-bottom: 20px; font-size: 14px;">
+                Enter your name to start watching and chatting with others
+            </p>
+            <input type="text" id="username-input" placeholder="Your display name..." autocomplete="name" maxlength="20">
+            <button id="username-submit">
+                <i class="fas fa-sign-in-alt"></i>
+                Join Chat
+            </button>
         </div>
     </div>
     
-    <!-- Admin request modal -->
+    <!-- Admin Request Modal -->
     <div class="admin-request-modal" id="admin-request-modal">
         <div class="modal-content">
-            <h2>Admin Request</h2>
-            <p id="admin-request-message"></p>
-            <button id="accept-admin-request">Accept</button>
-            <button id="reject-admin-request">Reject</button>
+            <h2><i class="fas fa-crown"></i> Admin Request</h2>
+            <p id="admin-request-message" style="color: var(--text-secondary); margin-bottom: 24px;"></p>
+            <div style="display: flex; gap: 12px; justify-content: center;">
+                <button id="accept-admin-request">
+                    <i class="fas fa-check"></i>
+                    Accept
+                </button>
+                <button id="reject-admin-request">
+                    <i class="fas fa-times"></i>
+                    Decline
+                </button>
+            </div>
         </div>
     </div>
 
-    <!-- Main container for side-by-side layout -->
+    <!-- Invite Modal -->
+    <div class="invite-modal" id="invite-modal">
+        <div class="modal-content">
+            <button class="modal-close" id="close-invite-modal">
+                <i class="fas fa-times"></i>
+            </button>
+            <h2><i class="fas fa-user-plus"></i> Invite Friends to Room</h2>
+            <p style="color: var(--text-secondary); margin-bottom: 24px;">
+                Share this link with friends to invite them to watch together
+            </p>
+            
+            <!-- Invite Link Display -->
+            <div class="invite-link-container">
+                <div class="invite-link-display">
+                    <input type="text" id="invite-link" readonly placeholder="Generate an invite link">
+                    <button id="copy-invite-link" class="copy-btn" disabled>
+                        <i class="fas fa-copy"></i>
+                    </button>
+                </div>
+                <div class="invite-actions">
+                    <button id="generate-invite" class="primary-btn">
+                        <i class="fas fa-link"></i>
+                        Generate Invite Link
+                    </button>
+                    <button id="revoke-invite" class="secondary-btn" style="display: none;">
+                        <i class="fas fa-times-circle"></i>
+                        Revoke Link
+                    </button>
+                </div>
+            </div>
+
+            <!-- Share Options -->
+            <div class="share-options">
+                <h3>Share via:</h3>
+                <div class="share-buttons">
+                    <button class="share-btn" onclick="shareViaWhatsApp()">
+                        <i class="fab fa-whatsapp"></i>
+                        WhatsApp
+                    </button>
+                    <button class="share-btn" onclick="shareViaDiscord()">
+                        <i class="fab fa-discord"></i>
+                        Discord
+                    </button>
+                    <button class="share-btn" onclick="shareViaEmail()">
+                        <i class="fas fa-envelope"></i>
+                        Email
+                    </button>
+                    <button class="share-btn" onclick="shareViaTwitter()">
+                        <i class="fab fa-twitter"></i>
+                        Twitter
+                    </button>
+                </div>
+            </div>
+
+            <!-- Invite Statistics -->
+            <div class="invite-stats" id="invite-stats" style="display: none;">
+                <div class="stat-item">
+                    <i class="fas fa-clock"></i>
+                    <span>Expires: <span id="invite-expires">Never</span></span>
+                </div>
+                <div class="stat-item">
+                    <i class="fas fa-link"></i>
+                    <span>Link Status: <span id="invite-status">Active</span></span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Main Application -->
     <div class="main-container">
-        <!-- Chat section (LEFT) -->
+        <!-- Chat Section -->
         <div class="chat-section">
+            <!-- Chat Header - Compact Design -->
+            <div class="chat-header-compact">
+                <div class="chat-header-left">
+                    <div class="chat-icon">
+                        <i class="fas fa-comments"></i>
+                    </div>
+                    <div class="chat-info">
+                        <span class="chat-title">Live Chat</span>
+                        <span class="online-users" id="online-users">0 users online</span>
+                    </div>
+                </div>
+                <div class="chat-header-right" id="user-info-compact">
+                    <!-- User info will be inserted here by JavaScript -->
+                </div>
+            </div>
+            
+            <!-- Messages Container -->
             <div class="chat-container">
                 <ul id="messages"></ul>
             </div>
             
-            <!-- Voice status indicators above the form -->
-            <div class="users-in-call" id="users-in-call"></div>
-            
+            <!-- Message Input Form -->
             <form id="form" action="">
-                <!-- Voice chat button now inside the form -->
-                <div class="voice-chat-controls">
-                    <!-- Just the icon, no text -->
-                    <button id="voice-chat-toggle" class="voice-chat-btn">
+                <!-- Single Input Row with Voice, Message, and Send -->
+                <div class="message-input-container">
+                    <!-- Voice Chat Button -->
+                    <button type="button" id="voice-chat-toggle" class="voice-chat-btn" title="Toggle voice chat">
                         <i class="fas fa-microphone"></i>
                     </button>
-                    <div class="voice-status" id="voice-status">Voice chat inactive</div>
+                    
+                    <!-- Message Input -->
+                    <input id="input" autocomplete="off" placeholder="Type a message..." maxlength="500" />
+                    
+                    <!-- Send Button -->
+                    <button type="submit" id="send" title="Send message">
+                        <i class="fas fa-paper-plane"></i>
+                    </button>
                 </div>
-                
-                <input id="input" autocomplete="off" placeholder="Type a message..." />
-                <button id="send"><i class="fas fa-paper-plane"></i></button>
             </form>
         </div>
-        
-        <!-- Video section (RIGHT) -->
+        <!-- Video Section -->
         <div class="video-section">
-            <div class="admin-notice" id="admin-notice"></div>
+            <!-- Video Player Container -->
             <div class="video-container">
-                <!-- Fallback video player for direct video URLs -->
+                <!-- Admin Notice -->
+                <div class="admin-notice" id="admin-notice"></div>
+                
+                <!-- Video Type Badge -->
+                <div class="video-type-badge" id="video-type-badge" style="display: none;"></div>
+                
+                <!-- Admin Viewing Notice -->
+                <div class="admin-viewing-notice" id="admin-viewing-notice">
+                    <i class="fas fa-crown"></i>
+                    Admin is controlling playback
+                </div>
+                
+                <!-- Video Players -->
                 <video id="direct-video-player" controls style="display: none; width: 100%; height: 100%;">
                     <source src="" type="video/mp4">
                     Your browser does not support HTML5 video.
                 </video>
                 
-                <!-- YouTube and other embedded players -->
                 <iframe id="video-player" src="" frameborder="0" 
                     allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" 
                     allowfullscreen></iframe>
             </div>
+            
+            <!-- Video Controls -->
             <div class="video-controls">
                 <input type="text" class="video-url-input" id="video-url" 
-                    placeholder="Enter any video URL (YouTube, Vimeo, direct MP4, etc.)">
-                <button class="change-video-btn" id="change-video">Change Video</button>
+                    placeholder="Paste any video URL (YouTube, Vimeo, direct MP4, etc.)" 
+                    maxlength="2000">
+                <button class="change-video-btn" id="change-video">
+                    <i class="fas fa-play"></i>
+                    Load Video
+                </button>
             </div>
+            
+            <!-- Admin Controls Panel -->
             <div class="admin-controls" id="admin-controls">
-                <p>You are the admin controller. You control the video for everyone.</p>
+                <p>
+                    <i class="fas fa-crown"></i>
+                    Video Controls
+                </p>
                 <div class="admin-video-controls">
-                    <button id="admin-play" class="admin-btn"><i class="fas fa-play"></i> Play for Everyone</button>
-                    <button id="admin-pause" class="admin-btn"><i class="fas fa-pause"></i> Pause for Everyone</button>
-                    <button id="admin-restart" class="admin-btn"><i class="fas fa-redo"></i> Restart Video</button>
+                    <button id="admin-play" class="admin-btn">
+                        <i class="fas fa-play"></i> 
+                        Play for All
+                    </button>
+                    <button id="admin-pause" class="admin-btn">
+                        <i class="fas fa-pause"></i> 
+                        Pause for All
+                    </button>
+                    <button id="admin-restart" class="admin-btn">
+                        <i class="fas fa-redo"></i> 
+                        Restart Video
+                    </button>
+                </div>
+                
+                <!-- Room Management Controls -->
+                <div class="room-management-controls">
+                    <button id="invite-button" class="admin-btn invite-btn">
+                        <i class="fas fa-user-plus"></i>
+                        Invite Friends
+                    </button>
+                    <button id="room-settings" class="admin-btn settings-btn">
+                        <i class="fas fa-cog"></i>
+                        Room Settings
+                    </button>
                 </div>
             </div>
-            <div id="request-admin-container" style="margin-top: 10px; text-align: center; display: none;">
-                <button class="request-admin-btn" id="request-admin">Request Admin Control</button>
+            
+            <!-- Request Admin Button -->
+            <div id="request-admin-container">
+                <button class="request-admin-btn" id="request-admin">
+                    <i class="fas fa-hand-paper"></i>
+                    Request Control
+                </button>
             </div>
-            <div class="admin-viewing-notice" id="admin-viewing-notice">Admin is controlling playback...</div>
+            
+            <!-- Video History -->
+            <div class="video-history-btn-container">
+                <button id="video-history-btn" class="video-history-btn">
+                    <i class="fas fa-history"></i> 
+                    Video History
+                </button>
+                <div id="video-history" class="video-history-container"></div>
+            </div>
         </div>
     </div>
     

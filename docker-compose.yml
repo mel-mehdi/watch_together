@@ -1,0 +1,85 @@
+version: '3.8'
+
+services:
+  # Main application
+  app:
+    build: .
+    container_name: watch-together-app
+    ports:
+      - "${PORT:-3000}:3000"
+    environment:
+      - NODE_ENV=production
+      - MONGODB_URI=mongodb://mongo:27017/watch-together
+      - PORT=3000
+    env_file:
+      - .env
+    depends_on:
+      - mongo
+    restart: unless-stopped
+    volumes:
+      - ./logs:/app/logs
+    networks:
+      - watch-together-network
+    healthcheck:
+      test: ["CMD", "node", "healthcheck.js"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # MongoDB database
+  mongo:
+    image: mongo:6.0
+    container_name: watch-together-mongo
+    ports:
+      - "27017:27017"
+    environment:
+      - MONGO_INITDB_DATABASE=watch-together
+    volumes:
+      - mongo-data:/data/db
+      - ./mongo-init:/docker-entrypoint-initdb.d
+    restart: unless-stopped
+    networks:
+      - watch-together-network
+    command: mongod --logpath /var/log/mongodb/mongod.log --logappend
+
+  # Redis for session storage (optional)
+  redis:
+    image: redis:7-alpine
+    container_name: watch-together-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    restart: unless-stopped
+    networks:
+      - watch-together-network
+    command: redis-server --appendonly yes
+
+  # Nginx reverse proxy (for production)
+  nginx:
+    image: nginx:alpine
+    container_name: watch-together-nginx
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/ssl:/etc/nginx/ssl:ro
+    depends_on:
+      - app
+    restart: unless-stopped
+    networks:
+      - watch-together-network
+    profiles:
+      - production
+
+volumes:
+  mongo-data:
+    driver: local
+  redis-data:
+    driver: local
+
+networks:
+  watch-together-network:
+    driver: bridge

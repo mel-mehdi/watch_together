@@ -1,33 +1,29 @@
 // Authentication and user management
-let authToken = null;
-let userData = null;
-let isGuestMode = false;
-let socket = null;    // Initialize authentication state and socket on script load
-function initializeAuthState() {
-    authToken = localStorage.getItem('authToken');
-    userData = localStorage.getItem('userData');
-    isGuestMode = localStorage.getItem('guestMode') === 'true';
+let authToken = localStorage.getItem('authToken');
+let userData = localStorage.getItem('userData');
+let isGuestMode = localStorage.getItem('guestMode') === 'true';
 
-    // Parse user data if it exists
-    if (userData) {
-        try {
-            userData = JSON.parse(userData);
-        } catch (e) {
-            userData = null;
-            localStorage.removeItem('userData');
-        }
+// Parse user data if it exists
+if (userData) {
+    try {
+        userData = JSON.parse(userData);
+    } catch (e) {
+        userData = null;
+        localStorage.removeItem('userData');
     }
-    
-    // Initialize socket immediately so event listeners can be attached
-    socket = io({
-        auth: {
-            token: authToken
-        }
-    });
 }
 
-// Call this immediately
-initializeAuthState();
+// Initialize socket with authentication
+const socket = io({
+    auth: {
+        token: authToken
+    }
+});
+
+// Check authentication status on page load
+if (!authToken && !isGuestMode) {
+    window.location.href = '/login.html';
+}
 
 const form = document.getElementById('form');
 const input = document.getElementById('input');
@@ -52,7 +48,7 @@ const adminPauseBtn = document.getElementById('admin-pause');
 const adminRestartBtn = document.getElementById('admin-restart');
 const adminViewingNotice = document.getElementById('admin-viewing-notice');
 const voiceChatToggle = null; // Removed - using new voice chat system
-const voiceStatus = null; // Removed voice status display
+const voiceStatus = document.getElementById('voice-status');
 const usersInCall = document.getElementById('users-in-call');
 const videoHistoryBtn = document.getElementById('video-history-btn'); 
 const videoHistoryContainer = document.getElementById('video-history');
@@ -135,13 +131,6 @@ function initializePlayer(videoUrl) {
     // Hide both players initially
     videoPlayer.style.display = 'none';
     directVideoPlayer.style.display = 'none';
-    
-    // Update video container state
-    updateVideoContainerState(!!videoUrl);
-    
-    if (!videoUrl) {
-        return;
-    }
     
     // Detect the video type
     currentVideoType = detectVideoType(videoUrl);
@@ -601,14 +590,16 @@ function setupYouTubeEventListeners() {
 function updateAdminUI() {
     if (isAdmin) {
         adminControls.style.display = 'block';
-        adminNotice.style.display = 'none'; // Hide admin notice when you're the admin
+        adminNotice.textContent = 'You are the admin controller';
+        adminNotice.style.display = 'block';
         requestAdminContainer.style.display = 'none';
         
         // Start continuous time sync from admin to all users
         startContinuousSync();
     } else {
         adminControls.style.display = 'none';
-        adminNotice.style.display = 'none'; // Hide admin notice completely
+        adminNotice.textContent = `${currentAdminUser} is controlling the video`;
+        adminNotice.style.display = 'block';
         requestAdminContainer.style.display = 'block';
         
         // Non-admins don't need to send continuous updates
@@ -750,54 +741,53 @@ if (videoHistoryBtn) {
 }
 
 // Socket event for loading chat history
-socket.on('recent messages', (messageHistory) => {
-    messageHistory.forEach(msg => {
-        const messageWrapper = document.createElement('li');
-        const messageContent = document.createElement('div');
-        messageContent.classList.add('message-content');
+socket.on('recent messages', (messages) => {
+    // Clear existing messages if needed
+    // messages.innerHTML = '';
+    
+    messages.forEach(msg => {
+        const item = document.createElement('li');
         
         if (msg.isSystemMessage) {
-            messageWrapper.classList.add('system-message');
-            messageContent.textContent = msg.content;
+            item.classList.add('system-message');
+            item.textContent = msg.content;
         } else {
-            // Determine if this is our message
-            const isOwnMessage = msg.username === username;
+            // Create username element
+            const usernameElement = document.createElement('div');
+            usernameElement.classList.add('username');
+            usernameElement.textContent = msg.username;
             
-            if (isOwnMessage) {
-                messageWrapper.classList.add('message-sent');
-            } else {
-                messageWrapper.classList.add('message-received');
-                
-                // Add username for received messages
-                const usernameElement = document.createElement('div');
-                usernameElement.classList.add('username');
-                usernameElement.textContent = msg.username;
-                
-                // Add admin badge if needed
-                if (msg.username === currentAdminUser) {
-                    const adminBadge = document.createElement('span');
-                    adminBadge.classList.add('admin-badge');
-                    adminBadge.textContent = 'ADMIN';
-                    usernameElement.appendChild(adminBadge);
-                }
-                
-                messageContent.appendChild(usernameElement);
+            // Add admin badge if needed
+            if (msg.username === currentAdminUser) {
+                const adminBadge = document.createElement('span');
+                adminBadge.classList.add('admin-badge');
+                adminBadge.textContent = 'ADMIN';
+                usernameElement.appendChild(adminBadge);
             }
             
-            // Add message text
-            const messageText = document.createElement('div');
-            messageText.textContent = msg.content;
-            messageContent.appendChild(messageText);
+            // Create message element
+            const messageElement = document.createElement('div');
+            messageElement.textContent = msg.content;
             
-            // Add timestamp
+            // Create timestamp element
             const timestampElement = document.createElement('div');
             timestampElement.classList.add('timestamp');
             timestampElement.textContent = new Date(msg.timestamp).toLocaleTimeString();
-            messageContent.appendChild(timestampElement);
+            
+            // Add elements to list item
+            item.appendChild(usernameElement);
+            item.appendChild(messageElement);
+            item.appendChild(timestampElement);
+            
+            // Style differently based on who sent the message
+            if (msg.username === username) {
+                item.classList.add('message-sent');
+            } else {
+                item.classList.add('message-received');
+            }
         }
         
-        messageWrapper.appendChild(messageContent);
-        messages.appendChild(messageWrapper);
+        messages.appendChild(item);
     });
     
     // Scroll to bottom
@@ -876,12 +866,11 @@ socket.on('admin request', (requestingUser, userId) => {
 // Socket events for video synchronization
 socket.on('video state', (state) => {
     initializePlayer(state.url);
-    videoUrlInput.value = state.url || '';
-    updateVideoContainerState(!!state.url);
+    videoUrlInput.value = state.url;
     
     // Wait for player to initialize then set the correct time and play state
     setTimeout(() => {
-        if (player && state.url) {
+        if (player) {
             console.log("Setting initial video state:", state);
             
             // Make sure we have a valid time (prevent setting to 0 if video is in progress)
@@ -904,8 +893,7 @@ socket.on('video state', (state) => {
 
 socket.on('change video', (url) => {
     initializePlayer(url);
-    videoUrlInput.value = url || '';
-    updateVideoContainerState(!!url);
+    videoUrlInput.value = url;
 });
 
 // Update the video play event handler
@@ -1048,48 +1036,20 @@ socket.on('sync time', (time) => {
 socket.on('chat message', (msg) => {
     console.log('Received chat message:', msg);
     
-    const messageWrapper = document.createElement('li');
-    const messageContent = document.createElement('div');
-    messageContent.classList.add('message-content');
+    const item = document.createElement('li');
+    item.classList.add('message-item');
     
     const timestamp = new Date().toLocaleTimeString();
     
-    // Determine if this is our message
-    const isOwnMessage = msg.username === username;
+    item.innerHTML = `
+        <div class="message-header">
+            <span class="username ${msg.isAdmin ? 'admin' : ''}">${msg.username}</span>
+            <span class="timestamp">${msg.timestamp || timestamp}</span>
+        </div>
+        <div class="message-content">${msg.message}</div>
+    `;
     
-    if (isOwnMessage) {
-        messageWrapper.classList.add('message-sent');
-    } else {
-        messageWrapper.classList.add('message-received');
-        
-        // Add username for received messages
-        const usernameElement = document.createElement('div');
-        usernameElement.classList.add('username');
-        usernameElement.textContent = msg.username;
-        
-        if (msg.isAdmin) {
-            const adminBadge = document.createElement('span');
-            adminBadge.classList.add('admin-badge');
-            adminBadge.textContent = 'ADMIN';
-            usernameElement.appendChild(adminBadge);
-        }
-        
-        messageContent.appendChild(usernameElement);
-    }
-    
-    // Add message text
-    const messageText = document.createElement('div');
-    messageText.textContent = msg.message;
-    messageContent.appendChild(messageText);
-    
-    // Add timestamp
-    const timestampElement = document.createElement('div');
-    timestampElement.classList.add('timestamp');
-    timestampElement.textContent = msg.timestamp || timestamp;
-    messageContent.appendChild(timestampElement);
-    
-    messageWrapper.appendChild(messageContent);
-    messages.appendChild(messageWrapper);
+    messages.appendChild(item);
     
     // Scroll to bottom
     const chatContainer = document.querySelector('.chat-container');
@@ -1099,15 +1059,10 @@ socket.on('chat message', (msg) => {
 // Handle system messages (join/leave)
 socket.on('system message', (msg) => {
     console.log('System message:', msg);
-    const messageWrapper = document.createElement('li');
-    const messageContent = document.createElement('div');
-    
-    messageWrapper.classList.add('system-message');
-    messageContent.classList.add('message-content');
-    messageContent.textContent = msg;
-    
-    messageWrapper.appendChild(messageContent);
-    messages.appendChild(messageWrapper);
+    const item = document.createElement('li');
+    item.classList.add('system-message');
+    item.textContent = msg;
+    messages.appendChild(item);
     
     const chatContainer = document.querySelector('.chat-container');
     chatContainer.scrollTop = chatContainer.scrollHeight;
@@ -1178,69 +1133,96 @@ socket.on('admin action', (action) => {
     }
 });
 
-// Simple Voice Chat System
+// Enhanced Voice Chat System
 class VoiceChat {
     constructor() {
         this.isInVoiceRoom = false;
         this.isMicEnabled = false;
+        this.isPushToTalk = false;
         this.localStream = null;
+        this.microphoneStream = null; // Separate stream for microphone
         this.peerConnections = {};
         this.audioElements = {};
+        this.voiceActivityDetector = null;
+        this.pushToTalkKey = 'Space'; // Space bar for push-to-talk
         
-        // UI Elements  
-        this.toggleBtn = document.getElementById('voice-chat-toggle');
-        this.voiceStatus = null; // Voice status display removed
+        // UI Elements
+        this.joinBtn = document.getElementById('join-voice-btn');
+        this.micBtn = document.getElementById('mic-toggle-btn');
+        this.pttBtn = document.getElementById('push-to-talk-btn');
+        this.leaveBtn = document.getElementById('leave-voice-btn');
+        this.voiceStatus = document.getElementById('voice-status');
         this.usersInCall = document.getElementById('users-in-call');
         
         this.initializeEventListeners();
+        this.initializeKeyboardControls();
     }
     
     initializeEventListeners() {
-        // Voice chat toggle button
-        if (this.toggleBtn) {
-            this.toggleBtn.addEventListener('click', () => {
-                if (!this.isInVoiceRoom) {
-                    this.joinVoiceRoom();
-                } else {
-                    this.leaveVoiceRoom();
-                }
-            });
-        }
+        // Join voice chat (as listener)
+        this.joinBtn.addEventListener('click', () => {
+            if (!this.isInVoiceRoom) {
+                this.joinVoiceRoom();
+            }
+        });
         
-        // Add microphone toggle on double-click
-        if (this.toggleBtn) {
-            this.toggleBtn.addEventListener('dblclick', (e) => {
+        // Toggle microphone
+        this.micBtn.addEventListener('click', () => {
+            this.toggleMicrophone();
+        });
+        
+        // Toggle push-to-talk mode
+        this.pttBtn.addEventListener('click', () => {
+            this.togglePushToTalk();
+        });
+        
+        // Leave voice chat
+        this.leaveBtn.addEventListener('click', () => {
+            this.leaveVoiceRoom();
+        });
+    }
+    
+    initializeKeyboardControls() {
+        // Push-to-talk controls
+        document.addEventListener('keydown', (e) => {
+            if (e.code === this.pushToTalkKey && this.isPushToTalk && this.isInVoiceRoom) {
                 e.preventDefault();
-                if (this.isInVoiceRoom) {
-                    this.toggleMicrophone();
-                }
-            });
-        }
+                this.startPushToTalk();
+            }
+        });
+        
+        document.addEventListener('keyup', (e) => {
+            if (e.code === this.pushToTalkKey && this.isPushToTalk && this.isInVoiceRoom) {
+                e.preventDefault();
+                this.stopPushToTalk();
+            }
+        });
     }
     
     async joinVoiceRoom() {
         try {
             this.isInVoiceRoom = true;
+            this.updateUI();
             
-            // Join as listener first
+            // Join as listener first (no microphone required)
             socket.emit('join voice room', { username, listenOnly: true });
             
-            // Voice status display removed
-            // this.voiceStatus.textContent = 'Listening...';
-            this.updateButtonState();
-            
-            showNotification('Joined voice chat - Double-click to enable microphone', 'success');
+            this.voiceStatus.textContent = 'In voice chat (listening)';
+            showNotification('Joined voice chat as listener', 'success');
             
         } catch (error) {
             console.error('Error joining voice room:', error);
             showNotification('Failed to join voice chat', 'error');
             this.isInVoiceRoom = false;
-            this.updateButtonState();
+            this.updateUI();
         }
     }
     
     async toggleMicrophone() {
-        if (!this.isInVoiceRoom) return;
+        if (!this.isInVoiceRoom) {
+            showNotification('Join voice chat first', 'error');
+            return;
+        }
         
         if (!this.isMicEnabled) {
             await this.enableMicrophone();
@@ -1251,31 +1233,33 @@ class VoiceChat {
     
     async enableMicrophone() {
         try {
-            // Get microphone access
-            this.localStream = await navigator.mediaDevices.getUserMedia({ 
+            // Request microphone access
+            const micStream = await navigator.mediaDevices.getUserMedia({ 
                 audio: {
                     echoCancellation: true,
                     noiseSuppression: true,
-                    autoGainControl: true
+                    autoGainControl: true,
+                    sampleRate: 44100
                 } 
             });
             
+            // Store microphone stream separately
+            this.microphoneStream = micStream;
             this.isMicEnabled = true;
+            this.setupVoiceActivityDetection();
+            this.updateUI();
             
             // Add our audio track to all existing peer connections
             Object.values(this.peerConnections).forEach(pc => {
-                this.localStream.getAudioTracks().forEach(track => {
-                    pc.addTrack(track, this.localStream);
+                micStream.getAudioTracks().forEach(track => {
+                    pc.addTrack(track, micStream);
                 });
             });
             
-            // Notify server
-            socket.emit('microphone enabled', { username });
+            // Notify server that we're now speaking
+            socket.emit('microphone enabled', username);
             
-            // Voice status display removed
-            // this.voiceStatus.textContent = 'Speaking enabled';
-            this.updateButtonState();
-            
+            this.voiceStatus.textContent = 'In voice chat (speaking enabled)';
             showNotification('Microphone enabled', 'success');
             
         } catch (error) {
@@ -1285,78 +1269,135 @@ class VoiceChat {
     }
     
     disableMicrophone() {
-        if (this.localStream) {
-            // Stop only audio tracks (microphone)
-            this.localStream.getAudioTracks().forEach(track => track.stop());
+        // Only disable microphone tracks, but keep listening capability
+        if (this.microphoneStream) {
+            // Stop microphone stream
+            this.microphoneStream.getTracks().forEach(track => track.stop());
             
-            // Remove tracks from peer connections
+            // Remove microphone tracks from all peer connections
             Object.values(this.peerConnections).forEach(pc => {
-                const senders = pc.getSenders();
-                senders.forEach(sender => {
-                    if (sender.track && sender.track.kind === 'audio') {
-                        pc.removeTrack(sender);
-                    }
-                });
+                const audioSenders = pc.getSenders().filter(sender => 
+                    sender.track && sender.track.kind === 'audio'
+                );
+                audioSenders.forEach(sender => pc.removeTrack(sender));
             });
             
-            this.localStream = null;
+            this.microphoneStream = null;
+        }
+        
+        if (this.voiceActivityDetector) {
+            this.voiceActivityDetector.disconnect();
+            this.voiceActivityDetector = null;
         }
         
         this.isMicEnabled = false;
+        this.isPushToTalk = false;
+        this.updateUI();
         
-        // Notify server
-        socket.emit('microphone disabled', { username });
+        // Notify server that we're no longer speaking (but still listening)
+        socket.emit('microphone disabled', username);
         
-        // Voice status display removed
-        // this.voiceStatus.textContent = 'Listening only';
-        this.updateButtonState();
-        
+        // Update status to show we're still in voice chat but just listening
+        this.voiceStatus.textContent = 'In voice chat (listening only)';
         showNotification('Microphone disabled - You can still hear others', 'info');
     }
     
-    leaveVoiceRoom() {
-        this.isInVoiceRoom = false;
-        this.disableMicrophone();
-        
-        // Close all peer connections
-        Object.values(this.peerConnections).forEach(pc => pc.close());
-        this.peerConnections = {};
-        
-        // Remove all audio elements
-        Object.values(this.audioElements).forEach(audio => audio.remove());
-        this.audioElements = {};
-        
-        // Clear users in call
-        if (this.usersInCall) {
-            this.usersInCall.innerHTML = '';
+    togglePushToTalk() {
+        if (!this.isMicEnabled) {
+            showNotification('Enable microphone first', 'error');
+            return;
         }
         
-        // Notify server
-        socket.emit('leave voice room');
+        this.isPushToTalk = !this.isPushToTalk;
+        this.updateUI();
         
-        // Voice status display removed
-        // this.voiceStatus.textContent = 'Voice chat inactive';
-        this.updateButtonState();
-        
-        showNotification('Left voice chat', 'info');
+        if (this.isPushToTalk) {
+            showNotification('Push-to-talk enabled (Hold SPACE to speak)', 'info');
+            // Mute microphone when push-to-talk is enabled
+            this.setMicrophoneEnabled(false);
+        } else {
+            showNotification('Push-to-talk disabled', 'info');
+            // Unmute microphone when push-to-talk is disabled
+            this.setMicrophoneEnabled(true);
+        }
     }
     
-    updateButtonState() {
-        if (!this.toggleBtn) return;
+    startPushToTalk() {
+        if (!this.isPushToTalk || !this.isMicEnabled) return;
         
-        if (this.isInVoiceRoom) {
-            this.toggleBtn.classList.add('active');
-            if (this.isMicEnabled) {
-                this.toggleBtn.innerHTML = '<i class="fas fa-microphone"></i>';
-                this.toggleBtn.title = 'Speaking enabled (Click to leave, Double-click to mute)';
-            } else {
-                this.toggleBtn.innerHTML = '<i class="fas fa-headphones"></i>';
-                this.toggleBtn.title = 'Listening (Click to leave, Double-click to speak)';
+        this.setMicrophoneEnabled(true);
+        this.showPushToTalkIndicator(true);
+        socket.emit('speaking', { username, speaking: true });
+    }
+    
+    stopPushToTalk() {
+        if (!this.isPushToTalk || !this.isMicEnabled) return;
+        
+        this.setMicrophoneEnabled(false);
+        this.showPushToTalkIndicator(false);
+        socket.emit('speaking', { username, speaking: false });
+    }
+    
+    setMicrophoneEnabled(enabled) {
+        if (this.microphoneStream) {
+            this.microphoneStream.getAudioTracks().forEach(track => {
+                track.enabled = enabled;
+            });
+        }
+    }
+    
+    showPushToTalkIndicator(show) {
+        let indicator = document.getElementById('ptt-indicator');
+        
+        if (show) {
+            if (!indicator) {
+                indicator = document.createElement('div');
+                indicator.id = 'ptt-indicator';
+                indicator.className = 'ptt-indicator';
+                indicator.innerHTML = '<i class="fas fa-microphone"></i> Push to Talk Active';
+                document.body.appendChild(indicator);
             }
+            indicator.style.display = 'block';
         } else {
-            this.toggleBtn.classList.remove('active');
-            this.toggleBtn.innerHTML = '<i class="fas fa-microphone"></i>';
-            this.toggleBtn.title = 'Join voice chat';
+            if (indicator) {
+                indicator.style.display = 'none';
+            }
+        }
+    }
+    
+    setupVoiceActivityDetection() {
+        if (!this.microphoneStream || this.isPushToTalk) return;
+        
+        try {
+            const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            const analyser = audioContext.createAnalyser();
+            const microphone = audioContext.createMediaStreamSource(this.microphoneStream);
+            
+            analyser.smoothingTimeConstant = 0.8;
+            analyser.fftSize = 1024;
+            
+            microphone.connect(analyser);
+            
+            const checkAudioLevel = () => {
+                const array = new Uint8Array(analyser.frequencyBinCount);
+                analyser.getByteFrequencyData(array);
+                const arraySum = array.reduce((a, value) => a + value, 0);
+                const average = arraySum / array.length;
+                
+                // Emit speaking status based on audio level
+                const isSpeaking = average > 20;
+                socket.emit('speaking', { username, speaking: isSpeaking });
+                
+                if (this.isMicEnabled && !this.isPushToTalk) {
+                    requestAnimationFrame(checkAudioLevel);
+                }
+            };
+            
+            checkAudioLevel();
+            this.voiceActivityDetector = analyser;
+            
+        } catch (error) {
+            console.error('Error setting up voice activity detection:', error);
         }
     }
     
@@ -1364,7 +1405,9 @@ class VoiceChat {
         try {
             const pc = new RTCPeerConnection({
                 iceServers: [
-                    { urls: 'stun:stun.l.google.com:19302' }
+                    { urls: 'stun:stun.l.google.com:19302' },
+                    { urls: 'stun:stun1.l.google.com:19302' },
+                    { urls: 'stun:stun2.l.google.com:19302' }
                 ]
             });
             
@@ -1390,6 +1433,14 @@ class VoiceChat {
                 }
             };
             
+            // Handle connection state changes
+            pc.onconnectionstatechange = () => {
+                console.log(`Connection state with ${userId}:`, pc.connectionState);
+                if (pc.connectionState === 'failed') {
+                    this.reconnectPeer(userId);
+                }
+            };
+            
             this.peerConnections[userId] = pc;
             return pc;
             
@@ -1410,7 +1461,7 @@ class VoiceChat {
         audio.id = `audio-${userId}`;
         audio.srcObject = stream;
         audio.autoplay = true;
-        audio.volume = 0.8;
+        audio.volume = 0.8; // Default volume
         audio.style.display = 'none';
         
         document.body.appendChild(audio);
@@ -1419,9 +1470,94 @@ class VoiceChat {
         console.log(`Audio stream received from user ${userId}`);
     }
     
+    setUserVolume(userId, volume) {
+        if (this.audioElements[userId]) {
+            this.audioElements[userId].volume = volume;
+        }
+    }
+    
+    async reconnectPeer(userId) {
+        console.log(`Attempting to reconnect to ${userId}`);
+        
+        // Close existing connection
+        if (this.peerConnections[userId]) {
+            this.peerConnections[userId].close();
+            delete this.peerConnections[userId];
+        }
+        
+        // Create new connection
+        const pc = await this.createPeerConnection(userId);
+        if (pc) {
+            // Send new offer
+            const offer = await pc.createOffer();
+            await pc.setLocalDescription(offer);
+            
+            socket.emit('voice offer', {
+                offer: pc.localDescription,
+                to: userId
+            });
+        }
+    }
+    
+    leaveVoiceRoom() {
+        this.isInVoiceRoom = false;
+        this.disableMicrophone();
+        
+        // Stop local stream if exists
+        if (this.localStream) {
+            this.localStream.getTracks().forEach(track => track.stop());
+            this.localStream = null;
+        }
+        
+        // Stop microphone stream if exists
+        if (this.microphoneStream) {
+            this.microphoneStream.getTracks().forEach(track => track.stop());
+            this.microphoneStream = null;
+        }
+        
+        // Close all peer connections
+        Object.values(this.peerConnections).forEach(pc => pc.close());
+        this.peerConnections = {};
+        
+        // Remove all audio elements
+        Object.values(this.audioElements).forEach(audio => audio.remove());
+        this.audioElements = {};
+        
+        // Clear users in call
+        this.usersInCall.innerHTML = '';
+        
+        // Notify server
+        socket.emit('leave voice room');
+        
+        this.voiceStatus.textContent = 'Not in voice chat';
+        this.updateUI();
+        
+        showNotification('Left voice chat', 'info');
+    }
+    
+    updateUI() {
+        // Update join button
+        this.joinBtn.classList.toggle('active', this.isInVoiceRoom);
+        this.joinBtn.disabled = this.isInVoiceRoom;
+        
+        // Update microphone button
+        this.micBtn.disabled = !this.isInVoiceRoom;
+        this.micBtn.classList.toggle('active', this.isMicEnabled);
+        this.micBtn.innerHTML = this.isMicEnabled ? 
+            '<i class="fas fa-microphone"></i>' : 
+            '<i class="fas fa-microphone-slash"></i>';
+        
+        // Update push-to-talk button
+        this.pttBtn.disabled = !this.isMicEnabled;
+        this.pttBtn.classList.toggle('active', this.isPushToTalk);
+        
+        // Update leave button
+        this.leaveBtn.style.display = this.isInVoiceRoom ? 'flex' : 'none';
+    }
+    
     addUserToCall(userData) {
         const existingUser = document.getElementById(`voice-user-${userData.userId}`);
-        if (existingUser) return;
+        if (existingUser) return; // User already in call
         
         const userElement = document.createElement('div');
         userElement.id = `voice-user-${userData.userId}`;
@@ -1436,9 +1572,25 @@ class VoiceChat {
             <small style="opacity: 0.8;">(${micStatus})</small>
         `;
         
-        if (this.usersInCall) {
-            this.usersInCall.appendChild(userElement);
+        // Add volume control for users with microphones
+        if (userData.hasMicrophone && userData.userId !== socket.id) {
+            const volumeControl = document.createElement('input');
+            volumeControl.type = 'range';
+            volumeControl.min = '0';
+            volumeControl.max = '1';
+            volumeControl.step = '0.1';
+            volumeControl.value = '0.8';
+            volumeControl.style.width = '60px';
+            volumeControl.style.marginLeft = '8px';
+            
+            volumeControl.addEventListener('input', (e) => {
+                this.setUserVolume(userData.userId, parseFloat(e.target.value));
+            });
+            
+            userElement.appendChild(volumeControl);
         }
+        
+        this.usersInCall.appendChild(userElement);
     }
     
     removeUserFromCall(userId) {
@@ -1662,31 +1814,9 @@ socket.on('detailed sync', (data) => {
     }
 });
 
-// Update online users count
-function updateOnlineUsersCount(count) {
-    const onlineUsersElement = document.getElementById('online-users');
-    if (onlineUsersElement) {
-        const userText = count === 1 ? 'user' : 'users';
-        onlineUsersElement.innerHTML = `<span class="online-indicator"></span>${count} ${userText} online`;
-    }
-}
-
-// Handle user count updates
-socket.on('user count', (count) => {
-    updateOnlineUsersCount(count);
-});
-
-// Handle user list updates  
-socket.on('user list', (users) => {
-    updateOnlineUsersCount(users.length);
-    
-    // You could also update a user list display here
-    console.log('Users online:', users);
-});
-
 // Authentication and initialization
 document.addEventListener('DOMContentLoaded', function() {
-    // Initialize authentication logic
+    // Initialize authentication state
     initializeAuth();
     
     // Initialize user interface
@@ -1695,101 +1825,90 @@ document.addEventListener('DOMContentLoaded', function() {
 
 function initializeAuth() {
     // If user is authenticated, use their data
-    if (authToken && userData && userData.username) {
-        console.log('  ✅ User is authenticated:', userData.username);
+    if (authToken && userData) {
         username = userData.username;
-        
-        // Hide the username modal
-        const usernameModal = document.getElementById('username-modal');
-        if (usernameModal) {
-            usernameModal.style.display = 'none';
-        }
-        
-        // Join socket with username
+        usernameModal.style.display = 'none';
         socket.emit('user join', username);
         updateUserInterface();
-        console.log('  🔗 Socket joined with username:', username);
     } 
-    // If user has auth token but no userData, try to fetch user info or fallback to guest
-    else if (authToken) {
-        console.log('  ⚠️ Auth token exists but no userData found');
-        // Auth token exists but no user data - this shouldn't happen but let's handle it
-        console.warn('Auth token exists but no userData found');
-        localStorage.removeItem('authToken');
-        localStorage.removeItem('userData');
-        
-        // Show username modal for guest mode
-        const usernameModal = document.getElementById('username-modal');
-        if (usernameModal) {
-            usernameModal.style.display = 'flex';
-        }
-        console.log('  🔗 Showing username modal (fallback to guest)');
-    }
     // If user is in guest mode, show username modal
     else if (isGuestMode) {
-        console.log('  👤 User is in guest mode');
-        
-        // Show username modal
-        const usernameModal = document.getElementById('username-modal');
-        if (usernameModal) {
-            usernameModal.style.display = 'flex';
-        }
-        console.log('  🔗 Showing username modal (guest mode)');
+        usernameModal.style.display = 'flex';
     } 
     // If not authenticated and not guest, redirect to login
     else {
-        console.log('  🔒 Not authenticated, redirecting to login');
         window.location.href = '/login.html';
-        return; // Don't continue if redirecting
     }
 }
 
-
-
 function updateUserInterface() {
-    // Update the compact user info in the chat header
-    const userInfoCompact = document.getElementById('user-info-compact');
-    if (!userInfoCompact) return;
+    // Add user profile section to the chat
+    const chatSection = document.querySelector('.chat-section');
     
-    // Create compact user info HTML
-    const isAdmin = userData && userData.isAdmin;
-    const avatarText = (userData && userData.avatar) ? userData.avatar : (username || 'GU').substring(0, 2).toUpperCase();
+    // Remove existing user info if any
+    const existingUserInfo = document.getElementById('user-info');
+    if (existingUserInfo) {
+        existingUserInfo.remove();
+    }
     
-    userInfoCompact.innerHTML = `
-        <div class="user-info-compact">
-            <div class="user-avatar-small">${avatarText}</div>
-            <span class="user-name-small">${username || 'Guest'}</span>
-            ${isAdmin ? '<span class="admin-badge-small">Admin</span>' : ''}
-        </div>
-        <div style="display: flex; gap: 4px; align-items: center;">
-            ${!authToken ? `
-                <button onclick="goToLogin()" 
-                        style="background: transparent; 
-                               border: 1px solid var(--border-color); 
-                               color: var(--text-secondary); 
-                               padding: 3px 6px; 
-                               border-radius: 4px; 
+    // Create user info section
+    const userInfo = document.createElement('div');
+    userInfo.id = 'user-info';
+    userInfo.innerHTML = `
+        <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); 
+                    color: white; 
+                    padding: 15px; 
+                    display: flex; 
+                    justify-content: space-between; 
+                    align-items: center;
+                    box-shadow: 0 2px 10px rgba(0,0,0,0.1);">
+            <div style="display: flex; align-items: center; gap: 10px;">
+                <div style="width: 40px; 
+                           height: 40px; 
+                           background: rgba(255,255,255,0.2); 
+                           border-radius: 50%; 
+                           display: flex; 
+                           align-items: center; 
+                           justify-content: center; 
+                           font-weight: bold;">
+                    ${userData ? userData.avatar : username.substring(0, 2).toUpperCase()}
+                </div>
+                <div>
+                    <div style="font-weight: 600;">${username}</div>
+                    <div style="font-size: 12px; opacity: 0.8;">
+                        ${authToken ? 'Registered User' : 'Guest User'}
+                    </div>
+                </div>
+            </div>
+            <div style="display: flex; gap: 10px;">
+                ${!authToken ? `
+                    <button onclick="goToLogin()" 
+                            style="background: rgba(255,255,255,0.2); 
+                                   border: none; 
+                                   color: white; 
+                                   padding: 5px 10px; 
+                                   border-radius: 5px; 
+                                   cursor: pointer;
+                                   font-size: 12px;">
+                        Login
+                    </button>
+                ` : ''}
+                <button onclick="logout()" 
+                        style="background: rgba(255,255,255,0.2); 
+                               border: none; 
+                               color: white; 
+                               padding: 5px 10px; 
+                               border-radius: 5px; 
                                cursor: pointer;
-                               font-size: 10px;
-                               transition: all 0.2s ease;"
-                        title="Login">
-                    Login
+                               font-size: 12px;">
+                    <i class="fas fa-sign-out-alt"></i>
                 </button>
-            ` : ''}
-            <button onclick="logout()" 
-                    style="background: transparent; 
-                           border: 1px solid var(--border-color); 
-                           color: var(--text-secondary); 
-                           padding: 3px 6px; 
-                           border-radius: 4px; 
-                           cursor: pointer;
-                           font-size: 10px;
-                           transition: all 0.2s ease;"
-                    title="Logout">
-                <i class="fas fa-sign-out-alt"></i>
-            </button>
+            </div>
         </div>
     `;
+    
+    // Insert at the top of chat section
+    chatSection.insertBefore(userInfo, chatSection.firstChild);
 }
 
 function initializeUI() {
@@ -1906,274 +2025,3 @@ style.textContent = `
     }
 `;
 document.head.appendChild(style);
-
-// ========================================
-// INVITE SYSTEM FUNCTIONALITY
-// ========================================
-
-// Invite system variables
-let currentInviteCode = null;
-let currentInviteUrl = null;
-
-// Get invite modal elements
-const inviteModal = document.getElementById('invite-modal');
-const inviteButton = document.getElementById('invite-button');
-const closeInviteModal = document.getElementById('close-invite-modal');
-const generateInviteBtn = document.getElementById('generate-invite');
-const revokeInviteBtn = document.getElementById('revoke-invite');
-const inviteLinkInput = document.getElementById('invite-link');
-const copyInviteLinkBtn = document.getElementById('copy-invite-link');
-const inviteStats = document.getElementById('invite-stats');
-const inviteExpires = document.getElementById('invite-expires');
-const inviteStatus = document.getElementById('invite-status');
-
-// Initialize invite system
-function initializeInviteSystem() {
-    // Add event listeners
-    if (inviteButton) {
-        inviteButton.addEventListener('click', openInviteModal);
-    }
-    
-    if (closeInviteModal) {
-        closeInviteModal.addEventListener('click', closeInviteModalHandler);
-    }
-    
-    if (generateInviteBtn) {
-        generateInviteBtn.addEventListener('click', generateInviteLink);
-    }
-    
-    if (revokeInviteBtn) {
-        revokeInviteBtn.addEventListener('click', revokeInviteLink);
-    }
-    
-    if (copyInviteLinkBtn) {
-        copyInviteLinkBtn.addEventListener('click', copyInviteLink);
-    }
-    
-    // Close modal when clicking outside
-    if (inviteModal) {
-        inviteModal.addEventListener('click', (e) => {
-            if (e.target === inviteModal) {
-                closeInviteModalHandler();
-            }
-        });
-    }
-}
-
-function openInviteModal() {
-    if (!isAdmin) {
-        showNotification('Only room admin can invite users', 'error');
-        return;
-    }
-    
-    inviteModal.style.display = 'flex';
-    
-    // Reset modal state
-    resetInviteModal();
-}
-
-function closeInviteModalHandler() {
-    inviteModal.style.display = 'none';
-}
-
-function resetInviteModal() {
-    inviteLinkInput.value = '';
-    copyInviteLinkBtn.disabled = true;
-    revokeInviteBtn.style.display = 'none';
-    inviteStats.style.display = 'none';
-    generateInviteBtn.style.display = 'block';
-    generateInviteBtn.disabled = false;
-}
-
-async function generateInviteLink() {
-    if (!isAdmin) {
-        showNotification('Only room admin can generate invite links', 'error');
-        return;
-    }
-    
-    generateInviteBtn.disabled = true;
-    generateInviteBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Generating...';
-    
-    try {
-        const response = await fetch('/api/rooms/default/invite', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${authToken || ''}`
-            }
-        });
-        
-        const result = await response.json();
-        
-        if (response.ok) {
-            currentInviteCode = result.inviteCode;
-            currentInviteUrl = result.inviteUrl;
-            
-            // Update UI
-            inviteLinkInput.value = currentInviteUrl;
-            copyInviteLinkBtn.disabled = false;
-            revokeInviteBtn.style.display = 'block';
-            generateInviteBtn.style.display = 'none';
-            
-            // Update stats
-            inviteExpires.textContent = new Date(result.expiresAt).toLocaleDateString();
-            inviteStatus.textContent = 'Active';
-            inviteStats.style.display = 'flex';
-            
-            showNotification('Invite link generated successfully!', 'success');
-        } else {
-            showNotification(result.message || 'Failed to generate invite link', 'error');
-        }
-    } catch (error) {
-        showNotification('Network error. Please try again.', 'error');
-    } finally {
-        generateInviteBtn.disabled = false;
-        generateInviteBtn.innerHTML = '<i class="fas fa-link"></i> Generate Invite Link';
-    }
-}
-
-async function revokeInviteLink() {
-    if (!isAdmin) {
-        showNotification('Only room admin can revoke invite links', 'error');
-        return;
-    }
-    
-    if (!confirm('Are you sure you want to revoke this invite link? It will no longer work.')) {
-        return;
-    }
-    
-    revokeInviteBtn.disabled = true;
-    revokeInviteBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Revoking...';
-    
-    try {
-        const response = await fetch('/api/rooms/default/invite', {
-            method: 'DELETE',
-            headers: {
-                'Authorization': `Bearer ${authToken || ''}`
-            }
-        });
-        
-        const result = await response.json();
-        
-        if (response.ok) {
-            currentInviteCode = null;
-            currentInviteUrl = null;
-            
-            // Reset UI
-            resetInviteModal();
-            
-            showNotification('Invite link revoked successfully', 'success');
-        } else {
-            showNotification(result.message || 'Failed to revoke invite link', 'error');
-        }
-    } catch (error) {
-        showNotification('Network error. Please try again.', 'error');
-    } finally {
-        revokeInviteBtn.disabled = false;
-        revokeInviteBtn.innerHTML = '<i class="fas fa-times-circle"></i> Revoke Link';
-    }
-}
-
-async function copyInviteLink() {
-    if (!currentInviteUrl) {
-        showNotification('No invite link to copy', 'error');
-        return;
-    }
-    
-    try {
-        await navigator.clipboard.writeText(currentInviteUrl);
-        
-        // Update button temporarily
-        const originalContent = copyInviteLinkBtn.innerHTML;
-        copyInviteLinkBtn.innerHTML = '<i class="fas fa-check"></i>';
-        copyInviteLinkBtn.style.background = 'var(--success-color)';
-        
-        setTimeout(() => {
-            copyInviteLinkBtn.innerHTML = originalContent;
-            copyInviteLinkBtn.style.background = '';
-        }, 2000);
-        
-        showNotification('Invite link copied to clipboard!', 'success');
-    } catch (error) {
-        // Fallback for older browsers
-        inviteLinkInput.select();
-        document.execCommand('copy');
-        showNotification('Invite link copied to clipboard!', 'success');
-    }
-}
-
-// Share functions
-function shareViaWhatsApp() {
-    if (!currentInviteUrl) {
-        showNotification('Generate an invite link first', 'error');
-        return;
-    }
-    
-    const message = `Join me for a watch party! 🎬\n\nClick this link to watch videos together: ${currentInviteUrl}`;
-    const whatsappUrl = `https://wa.me/?text=${encodeURIComponent(message)}`;
-    window.open(whatsappUrl, '_blank');
-}
-
-function shareViaDiscord() {
-    if (!currentInviteUrl) {
-        showNotification('Generate an invite link first', 'error');
-        return;
-    }
-    
-    copyInviteLink();
-    showNotification('Link copied! Paste it in your Discord chat', 'info');
-}
-
-function shareViaEmail() {
-    if (!currentInviteUrl) {
-        showNotification('Generate an invite link first', 'error');
-        return;
-    }
-    
-    const subject = 'Join me for a watch party!';
-    const body = `Hey!\n\nI'm hosting a watch party where we can watch videos together and chat in real-time.\n\nJoin me here: ${currentInviteUrl}\n\nSee you there! 🎬`;
-    const mailtoUrl = `mailto:?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
-    window.open(mailtoUrl);
-}
-
-function shareViaTwitter() {
-    if (!currentInviteUrl) {
-        showNotification('Generate an invite link first', 'error');
-        return;
-    }
-    
-    const message = `Join me for a watch party! 🎬 Watch videos together and chat in real-time: ${currentInviteUrl}`;
-    const twitterUrl = `https://twitter.com/intent/tweet?text=${encodeURIComponent(message)}`;
-    window.open(twitterUrl, '_blank');
-}
-
-// Initialize invite system when DOM is loaded
-document.addEventListener('DOMContentLoaded', function() {
-    initializeInviteSystem();
-});
-
-// Make share functions globally available
-window.shareViaWhatsApp = shareViaWhatsApp;
-window.shareViaDiscord = shareViaDiscord;
-window.shareViaEmail = shareViaEmail;
-window.shareViaTwitter = shareViaTwitter;
-
-// Function to update video container state
-function updateVideoContainerState(hasVideo = false) {
-    const videoContainer = document.getElementById('video-player')?.parentElement || 
-                          document.getElementById('direct-video-player')?.parentElement;
-    
-    if (videoContainer) {
-        if (hasVideo) {
-            videoContainer.classList.add('has-video');
-        } else {
-            videoContainer.classList.remove('has-video');
-        }
-    }
-}
-
-// Call this function whenever video state changes
-function updateVideoState(url, playing, currentTime, videoType) {
-    updateVideoContainerState(!!url);
-    // ...existing video state update logic...
-}
