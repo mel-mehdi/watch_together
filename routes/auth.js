@@ -5,18 +5,24 @@ const nodemailer = require('nodemailer');
 const User = require('../models/User');
 const router = express.Router();
 
-// Configure nodemailer (you'll need to set up email credentials)
-const transporter = nodemailer.createTransport({
-    // For development, you can use services like Ethereal Email for testing
-    // In production, use a real email service like Gmail, SendGrid, etc.
-    host: process.env.EMAIL_HOST || 'smtp.ethereal.email',
-    port: process.env.EMAIL_PORT || 587,
-    secure: false,
-    auth: {
-        user: process.env.EMAIL_USER || 'test@ethereal.email',
-        pass: process.env.EMAIL_PASS || 'test123'
-    }
-});
+// Configure nodemailer (email credentials are optional for development)
+let transporter = null;
+
+// Only create transporter if email credentials are properly configured
+if (process.env.EMAIL_HOST && process.env.EMAIL_USER && process.env.EMAIL_PASS) {
+    transporter = nodemailer.createTransporter({
+        host: process.env.EMAIL_HOST,
+        port: process.env.EMAIL_PORT || 587,
+        secure: false,
+        auth: {
+            user: process.env.EMAIL_USER,
+            pass: process.env.EMAIL_PASS
+        }
+    });
+    console.log('Email configuration found. Password reset via email is enabled.');
+} else {
+    console.log('Email configuration not found. Password reset via email will be disabled.');
+}
 
 // Register new user
 router.post('/register', async (req, res) => {
@@ -43,36 +49,49 @@ router.post('/register', async (req, res) => {
         }
 
         // Check if user already exists
-        const existingUser = await User.findOne({ 
-            $or: [{ email }, { username }] 
+        const existingUser = await User.findOne({
+            $or: [
+                { username: username },
+                { email: email }
+            ]
         });
 
         if (existingUser) {
-            return res.status(400).json({ 
-                error: 'User with this email or username already exists' 
-            });
+            if (existingUser.username === username) {
+                return res.status(400).json({ 
+                    error: 'Username already exists' 
+                });
+            } else {
+                return res.status(400).json({ 
+                    error: 'Email already registered' 
+                });
+            }
         }
 
         // Create new user
-        const user = new User({ username, email, password });
+        const user = new User({
+            username,
+            email,
+            password // Will be hashed by the pre-save middleware
+        });
+
         await user.save();
 
         // Generate JWT token
         const token = jwt.sign(
-            { userId: user._id }, 
-            process.env.JWT_SECRET || 'fallback-secret-key',
+            { userId: user._id, username: user.username },
+            process.env.JWT_SECRET || 'fallback-secret',
             { expiresIn: '7d' }
         );
 
         res.status(201).json({
+            success: true,
             message: 'User registered successfully',
             token,
             user: {
                 id: user._id,
                 username: user.username,
-                email: user.email,
-                isAdmin: user.isAdmin,
-                avatar: user.getAvatarInitials()
+                email: user.email
             }
         });
 
@@ -87,54 +106,55 @@ router.post('/register', async (req, res) => {
 // Login user
 router.post('/login', async (req, res) => {
     try {
-        const { username, password } = req.body;
+        const { usernameOrEmail, password } = req.body;
 
-        // Validation
-        if (!username || !password) {
+        if (!usernameOrEmail || !password) {
             return res.status(400).json({ 
-                error: 'Please provide username and password' 
+                error: 'Please provide username/email and password' 
             });
         }
 
-        // Find user by username
-        const user = await User.findOne({ username });
+        // Find user by username or email
+        const user = await User.findOne({
+            $or: [
+                { username: usernameOrEmail },
+                { email: usernameOrEmail }
+            ]
+        });
 
         if (!user) {
-            return res.status(400).json({ 
+            return res.status(401).json({ 
                 error: 'Invalid credentials' 
             });
         }
 
         // Check password
-        const isMatch = await user.comparePassword(password);
-        if (!isMatch) {
-            return res.status(400).json({ 
+        const isValidPassword = await user.comparePassword(password);
+        if (!isValidPassword) {
+            return res.status(401).json({ 
                 error: 'Invalid credentials' 
             });
         }
 
-        // Update last seen and online status
-        user.lastSeen = new Date();
-        user.isOnline = true;
-        await user.save();
-
         // Generate JWT token
         const token = jwt.sign(
-            { userId: user._id }, 
-            process.env.JWT_SECRET || 'fallback-secret-key',
+            { userId: user._id, username: user.username },
+            process.env.JWT_SECRET || 'fallback-secret',
             { expiresIn: '7d' }
         );
 
+        // Update last login
+        user.lastLogin = new Date();
+        await user.save();
+
         res.json({
+            success: true,
             message: 'Login successful',
             token,
             user: {
                 id: user._id,
                 username: user.username,
-                email: user.email,
-                isAdmin: user.isAdmin,
-                avatar: user.getAvatarInitials(),
-                preferences: user.preferences
+                email: user.email
             }
         });
 
@@ -146,48 +166,20 @@ router.post('/login', async (req, res) => {
     }
 });
 
-// Logout user
-router.post('/logout', async (req, res) => {
-    try {
-        const token = req.headers.authorization?.replace('Bearer ', '');
-        
-        if (token) {
-            const decoded = jwt.verify(token, process.env.JWT_SECRET || 'fallback-secret-key');
-            const user = await User.findById(decoded.userId);
-            
-            if (user) {
-                user.isOnline = false;
-                user.lastSeen = new Date();
-                await user.save();
-            }
-        }
-
-        res.json({ success: true, message: 'Logged out successfully' });
-    } catch (error) {
-        res.json({ success: true, message: 'Logged out successfully' });
-    }
-});
-
 // Get current user profile
-router.get('/profile', async (req, res) => {
+router.get('/me', async (req, res) => {
     try {
         const token = req.headers.authorization?.replace('Bearer ', '');
         
         if (!token) {
-            return res.status(401).json({ 
-                success: false, 
-                message: 'No token provided' 
-            });
+            return res.status(401).json({ error: 'No token provided' });
         }
 
-        const decoded = jwt.verify(token, process.env.JWT_SECRET || 'fallback-secret-key');
+        const decoded = jwt.verify(token, process.env.JWT_SECRET || 'fallback-secret');
         const user = await User.findById(decoded.userId).select('-password');
 
         if (!user) {
-            return res.status(404).json({ 
-                success: false, 
-                message: 'User not found' 
-            });
+            return res.status(401).json({ error: 'User not found' });
         }
 
         res.json({
@@ -196,68 +188,109 @@ router.get('/profile', async (req, res) => {
                 id: user._id,
                 username: user.username,
                 email: user.email,
-                isAdmin: user.isAdmin,
-                avatar: user.getAvatarInitials(),
-                preferences: user.preferences,
-                createdAt: user.createdAt
+                createdAt: user.createdAt,
+                lastLogin: user.lastLogin
             }
         });
 
     } catch (error) {
-        console.error('Profile error:', error);
-        res.status(401).json({ 
-            success: false, 
-            message: 'Invalid token' 
-        });
+        console.error('Profile fetch error:', error);
+        res.status(401).json({ error: 'Invalid token' });
     }
 });
 
-// Update user preferences
-router.put('/preferences', async (req, res) => {
+// Verify token endpoint
+router.post('/verify-token', async (req, res) => {
     try {
-        const token = req.headers.authorization?.replace('Bearer ', '');
+        const { token } = req.body;
         
         if (!token) {
-            return res.status(401).json({ 
+            return res.status(400).json({ 
                 success: false, 
-                message: 'No token provided' 
+                message: 'Token is required' 
             });
         }
 
-        const decoded = jwt.verify(token, process.env.JWT_SECRET || 'fallback-secret-key');
-        const user = await User.findById(decoded.userId);
+        const decoded = jwt.verify(token, process.env.JWT_SECRET || 'fallback-secret');
+        const user = await User.findById(decoded.userId).select('-password');
 
         if (!user) {
-            return res.status(404).json({ 
+            return res.status(401).json({ 
                 success: false, 
                 message: 'User not found' 
             });
         }
 
-        const { theme, notifications } = req.body;
-        
-        if (theme) user.preferences.theme = theme;
-        if (typeof notifications === 'boolean') user.preferences.notifications = notifications;
-
-        await user.save();
-
         res.json({
             success: true,
-            message: 'Preferences updated successfully',
-            preferences: user.preferences
+            valid: true,
+            user: {
+                id: user._id,
+                username: user.username,
+                email: user.email
+            }
         });
 
     } catch (error) {
-        console.error('Preferences update error:', error);
-        res.status(500).json({ 
+        res.status(401).json({ 
             success: false, 
-            message: 'Server error updating preferences' 
+            valid: false, 
+            message: 'Invalid token' 
         });
     }
 });
 
-// Request password reset
-router.post('/request-reset', async (req, res) => {
+// Refresh token
+router.post('/refresh-token', async (req, res) => {
+    try {
+        const { token } = req.body;
+        
+        if (!token) {
+            return res.status(400).json({ error: 'Token is required' });
+        }
+
+        const decoded = jwt.verify(token, process.env.JWT_SECRET || 'fallback-secret');
+        const user = await User.findById(decoded.userId);
+
+        if (!user) {
+            return res.status(401).json({ error: 'User not found' });
+        }
+
+        // Generate new token
+        const newToken = jwt.sign(
+            { userId: user._id, username: user.username },
+            process.env.JWT_SECRET || 'fallback-secret',
+            { expiresIn: '7d' }
+        );
+
+        res.json({
+            success: true,
+            token: newToken,
+            user: {
+                id: user._id,
+                username: user.username,
+                email: user.email
+            }
+        });
+
+    } catch (error) {
+        console.error('Token refresh error:', error);
+        res.status(401).json({ error: 'Invalid token' });
+    }
+});
+
+// Logout (optional - mainly for clearing session data)
+router.post('/logout', (req, res) => {
+    // Since we're using JWT, logout is mainly handled client-side
+    // But we can clear any session data here if needed
+    res.json({
+        success: true,
+        message: 'Logged out successfully'
+    });
+});
+
+// Forgot password
+router.post('/forgot-password', async (req, res) => {
     try {
         const { usernameOrEmail } = req.body;
 
@@ -293,7 +326,7 @@ router.post('/request-reset', async (req, res) => {
         await user.save();
 
         // Send email (in production, you'd want proper email templates)
-        const resetURL = `${req.protocol}://${req.get('host')}/reset-password?token=${resetToken}`;
+        const resetURL = `${req.protocol}://${req.get('host')}/reset-password.html?token=${resetToken}`;
         
         const mailOptions = {
             to: user.email,
@@ -331,7 +364,12 @@ router.post('/request-reset', async (req, res) => {
         };
 
         try {
-            await transporter.sendMail(mailOptions);
+            if (transporter) {
+                await transporter.sendMail(mailOptions);
+                console.log(`Password reset email sent to ${user.email}`);
+            } else {
+                console.log(`Password reset requested for ${user.username}, but email is not configured. Reset URL: ${resetURL}`);
+            }
         } catch (emailError) {
             console.error('Email send error:', emailError);
             // Don't fail the request if email fails
@@ -339,7 +377,9 @@ router.post('/request-reset', async (req, res) => {
 
         res.json({
             success: true,
-            message: 'If an account with that username or email exists, you will receive a password reset link.'
+            message: !transporter 
+                ? 'Password reset requested. Since email is not configured, check the server console for the reset link.'
+                : 'If an account with that username or email exists, you will receive a password reset link.'
         });
 
     } catch (error) {
@@ -383,15 +423,15 @@ router.post('/reset-password', async (req, res) => {
             });
         }
 
-        // Update password and clear reset token
-        user.password = newPassword;
+        // Update password
+        user.password = newPassword; // Will be hashed by pre-save middleware
         user.resetPasswordToken = undefined;
         user.resetPasswordExpires = undefined;
         await user.save();
 
         res.json({
             success: true,
-            message: 'Password reset successfully. You can now log in with your new password.'
+            message: 'Password has been successfully reset. You can now login with your new password.'
         });
 
     } catch (error) {

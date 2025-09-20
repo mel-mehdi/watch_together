@@ -27,7 +27,7 @@
     <div class="username-modal" id="username-modal">
         <div class="modal-content">
             <h2><i class="fas fa-user-circle"></i> Join the Room</h2>
-            <p style="color: var(--text-secondary); margin-bottom: 20px; font-size: 14px;">
+            <p class="modal-desc">
                 Enter your name to start watching and chatting with others
             </p>
             <input type="text" id="username-input" placeholder="Your display name..." autocomplete="name" maxlength="20">
@@ -42,8 +42,8 @@
     <div class="admin-request-modal" id="admin-request-modal">
         <div class="modal-content">
             <h2><i class="fas fa-crown"></i> Admin Request</h2>
-            <p id="admin-request-message" style="color: var(--text-secondary); margin-bottom: 24px;"></p>
-            <div style="display: flex; gap: 12px; justify-content: center;">
+            <p id="admin-request-message" class="admin-msg"></p>
+            <div class="btn-container">
                 <button id="accept-admin-request">
                     <i class="fas fa-check"></i>
                     Accept
@@ -63,7 +63,7 @@
                 <i class="fas fa-times"></i>
             </button>
             <h2><i class="fas fa-user-plus"></i> Invite Friends to Room</h2>
-            <p style="color: var(--text-secondary); margin-bottom: 24px;">
+            <p class="admin-msg">
                 Share this link with friends to invite them to watch together
             </p>
             
@@ -80,7 +80,7 @@
                         <i class="fas fa-link"></i>
                         Generate Invite Link
                     </button>
-                    <button id="revoke-invite" class="secondary-btn" style="display: none;">
+                    <button id="revoke-invite" class="secondary-btn hidden">
                         <i class="fas fa-times-circle"></i>
                         Revoke Link
                     </button>
@@ -111,7 +111,7 @@
             </div>
 
             <!-- Invite Statistics -->
-            <div class="invite-stats" id="invite-stats" style="display: none;">
+            <div class="invite-stats hidden" id="invite-stats">
                 <div class="stat-item">
                     <i class="fas fa-clock"></i>
                     <span>Expires: <span id="invite-expires">Never</span></span>
@@ -176,7 +176,7 @@
                 <div class="admin-notice" id="admin-notice"></div>
                 
                 <!-- Video Type Badge -->
-                <div class="video-type-badge" id="video-type-badge" style="display: none;"></div>
+                <div class="video-type-badge hidden" id="video-type-badge"></div>
                 
                 <!-- Admin Viewing Notice -->
                 <div class="admin-viewing-notice" id="admin-viewing-notice">
@@ -185,12 +185,14 @@
                 </div>
                 
                 <!-- Video Players -->
-                <video id="direct-video-player" controls style="display: none; width: 100%; height: 100%;">
+                <video id="direct-video-player" controls class="video-player">
                     <source src="" type="video/mp4">
-                    Your browser does not support HTML5 video.
+                    <p class="video-msg">
+                        Your browser does not support HTML5 video. Please try a different browser or video format.
+                    </p>
                 </video>
                 
-                <iframe id="video-player" src="" frameborder="0" 
+                <iframe id="video-player" src="" frameborder="0" class="video-player"
                     allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" 
                     allowfullscreen></iframe>
             </div>
@@ -237,6 +239,28 @@
                         <i class="fas fa-cog"></i>
                         Room Settings
                     </button>
+                </div>
+                
+                <!-- System Message Settings -->
+                <div class="system-message-settings">
+                    <p class="chat-timestamp">
+                        <i class="fas fa-comment-dots"></i>
+                        Chat Notifications
+                    </p>
+                    <div class="settings-toggles">
+                        <label class="toggle-label">
+                            <input type="checkbox" id="toggle-join-leave" checked>
+                            <span class="toggle-text">Join/Leave messages</span>
+                        </label>
+                        <label class="toggle-label">
+                            <input type="checkbox" id="toggle-admin-change" checked>
+                            <span class="toggle-text">Admin change messages</span>
+                        </label>
+                        <label class="toggle-label">
+                            <input type="checkbox" id="toggle-video-change" checked>
+                            <span class="toggle-text">Video change messages</span>
+                        </label>
+                    </div>
                 </div>
             </div>
             

@@ -72,8 +72,9 @@ body {
     padding: 0; 
     background: var(--bg-primary);
     color: var(--text-primary);
-    height: 100vh;
-    overflow: hidden;
+    min-height: 100vh;
+    overflow-x: hidden;
+    overflow-y: auto;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
 }
@@ -102,7 +103,7 @@ body {
 /* Main Layout */
 .main-container {
     display: flex;
-    height: 100vh;
+    min-height: 100vh;
     width: 100%;
     background: var(--bg-primary);
     position: relative;
@@ -114,13 +115,13 @@ body {
     width: 400px;
     min-width: 350px;
     max-width: 500px;
-    height: 100vh;
+    min-height: 100vh;
     display: flex;
     flex-direction: column;
     background: var(--bg-secondary);
     border-right: 1px solid var(--border-color);
     position: relative;
-    overflow: hidden;
+    overflow: visible;
     flex-shrink: 0;
 }
 
@@ -138,7 +139,7 @@ body {
 /* Video Section */
 .video-section {
     flex: 1;
-    height: 100vh;
+    min-height: 100vh;
     background: var(--bg-primary);
     padding: 24px;
     display: flex;
@@ -332,6 +333,12 @@ body {
     transform: translateY(0);
 }
 
+.change-video-btn {
+    padding: 14px 24px;
+    font-size: 14px;
+    align-self: stretch;
+}
+
 /* Admin Controls and Notices */
 .admin-badge {
     display: inline-flex;
@@ -505,6 +512,73 @@ body {
     display: none;
 }
 
+/* System Message Settings Toggles */
+.system-message-settings {
+    margin-top: 16px;
+    border-top: 1px solid var(--border-color);
+    padding-top: 16px;
+}
+
+.settings-toggles {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.toggle-label {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    cursor: pointer;
+    padding: 8px 0;
+    font-size: 13px;
+    color: var(--text-secondary);
+    transition: var(--transition-smooth);
+}
+
+.toggle-label:hover {
+    color: var(--text-primary);
+}
+
+.toggle-label input[type="checkbox"] {
+    position: relative;
+    width: 44px;
+    height: 24px;
+    appearance: none;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    cursor: pointer;
+    transition: var(--transition-smooth);
+}
+
+.toggle-label input[type="checkbox"]:checked {
+    background: var(--primary-color);
+    border-color: var(--primary-color);
+}
+
+.toggle-label input[type="checkbox"]::before {
+    content: '';
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    width: 18px;
+    height: 18px;
+    background: white;
+    border-radius: 50%;
+    transition: var(--transition-smooth);
+    box-shadow: var(--shadow-sm);
+}
+
+.toggle-label input[type="checkbox"]:checked::before {
+    transform: translateX(20px);
+}
+
+.toggle-text {
+    flex: 1;
+    font-weight: 500;
+}
+
 .video-type-badge {
     position: absolute;
     top: 24px;
@@ -529,6 +603,7 @@ body {
     background: var(--bg-chat);
     position: relative;
     scroll-behavior: smooth;
+    max-height: calc(100vh - 130px); /* Account for header (50px) and input (76px) */
 }
 
 .chat-container::before {
@@ -1739,6 +1814,31 @@ body {
         height: 40px;
         font-size: 14px;
     }
+    
+    /* Video section responsive adjustments */
+    .video-section {
+        padding: 16px;
+        gap: 16px;
+    }
+    
+    .video-container {
+        padding-bottom: 50%; /* Slightly less tall on smaller screens */
+    }
+    
+    .video-controls {
+        gap: 8px;
+        padding: 0;
+    }
+    
+    .video-url-input {
+        padding: 12px 16px;
+        font-size: 14px;
+    }
+    
+    .change-video-btn {
+        padding: 12px 20px;
+        font-size: 13px;
+    }
 }
 
 @media (max-width: 480px) {
@@ -1764,4 +1864,74 @@ body {
         height: 36px;
         font-size: 13px;
     }
+    
+    /* Video section responsive adjustments for mobile */
+    .video-section {
+        padding: 12px;
+        gap: 12px;
+    }
+    
+    .video-container {
+        padding-bottom: 45%; /* Even less tall on very small screens */
+    }
+    
+    .video-controls {
+        flex-direction: column;
+        gap: 12px;
+    }
+    
+    .video-url-input {
+        padding: 14px 16px;
+        font-size: 16px; /* Prevent zoom on iOS */
+    }
+    
+    .change-video-btn {
+        padding: 14px 24px;
+        font-size: 14px;
+        align-self: stretch;
+    }
+}
+
+/* Utility classes for inline styles */
+.hidden {
+    display: none;
+}
+
+.modal-desc {
+    color: var(--text-secondary);
+    margin-bottom: 20px;
+    font-size: 14px;
+}
+
+.admin-msg {
+    color: var(--text-secondary);
+    margin-bottom: 24px;
+}
+
+.btn-container {
+    display: flex;
+    gap: 12px;
+    justify-content: center;
+}
+
+.video-player {
+    display: none;
+    width: 100%;
+    height: 100%;
+}
+
+#direct-video-player {
+    background: #000;
+}
+
+.video-msg {
+    color: white;
+    text-align: center;
+    padding: 20px;
+}
+
+.chat-timestamp {
+    margin: 15px 0 10px 0;
+    font-size: 13px;
+    color: var(--text-secondary);
 }

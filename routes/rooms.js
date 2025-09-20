@@ -2,21 +2,253 @@ const express = require('express');
 const crypto = require('crypto');
 const Room = require('../models/Room');
 const User = require('../models/User');
-const { authenticateToken } = require('../middleware/auth');
+const Message = require('../models/Message');
+const VideoHistory = require('../models/VideoHistory');
 const router = express.Router();
 
-// Get room info
+// Create a new room
+router.post('/create', async (req, res) => {
+    try {
+        const { roomName, description, isPrivate, maxUsers, creatorUsername } = req.body;
+
+        // Validation
+        if (!roomName || !creatorUsername) {
+            return res.status(400).json({ 
+                success: false, 
+                message: 'Room name and creator username are required' 
+            });
+        }
+
+        if (roomName.length < 3 || roomName.length > 50) {
+            return res.status(400).json({ 
+                success: false, 
+                message: 'Room name must be between 3 and 50 characters' 
+            });
+        }
+
+        // Generate unique room code (8 characters for easy sharing)
+        let roomCode;
+        let isUnique = false;
+        while (!isUnique) {
+            roomCode = crypto.randomBytes(4).toString('hex').toUpperCase();
+            const existingRoom = await Room.findOne({ roomCode });
+            if (!existingRoom) {
+                isUnique = true;
+            }
+        }
+
+        // Find or create creator user
+        let creator = await User.findOne({ username: creatorUsername });
+        if (!creator) {
+            // Create guest user for creator
+            const guestEmail = `${creatorUsername.toLowerCase().replace(/[^a-z0-9]/g, '')}_${Date.now()}@guest.com`;
+            creator = new User({
+                username: creatorUsername,
+                email: guestEmail,
+                isGuest: true
+            });
+            await creator.save();
+        }
+
+        // Create room
+        const room = new Room({
+            name: roomName,
+            description: description || '',
+            roomCode: roomCode,
+            adminUser: creator._id,
+            users: [creator._id],
+            isPrivate: isPrivate !== false, // Default to private
+            maxUsers: maxUsers || 50,
+            currentVideo: { url: '', type: 'unknown' },
+            videoState: { playing: false, currentTime: 0 }
+        });
+
+        await room.save();
+
+        // Generate invite link if room is private
+        let inviteCode = null;
+        if (room.isPrivate) {
+            inviteCode = crypto.randomBytes(16).toString('hex');
+            room.inviteCode = inviteCode;
+            room.inviteExpires = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000); // 7 days
+            await room.save();
+        }
+
+        const roomUrl = `${req.protocol}://${req.get('host')}/room/${room.roomCode}`;
+        const joinUrl = `${req.protocol}://${req.get('host')}/join?code=${room.roomCode}`;
+
+        res.json({
+            success: true,
+            message: 'Room created successfully',
+            room: {
+                id: room._id,
+                name: room.name,
+                description: room.description,
+                roomCode: room.roomCode,
+                isPrivate: room.isPrivate,
+                maxUsers: room.maxUsers,
+                userCount: 1,
+                roomUrl: roomUrl,
+                joinUrl: joinUrl,
+                inviteCode: inviteCode,
+                createdAt: room.createdAt
+            },
+            creator: {
+                id: creator._id,
+                username: creator.username,
+                isGuest: creator.isGuest
+            }
+        });
+
+    } catch (error) {
+        console.error('Create room error:', error);
+        res.status(500).json({ 
+            success: false, 
+            message: 'Server error creating room' 
+        });
+    }
+});
+
+// Join room by code
+router.post('/join', async (req, res) => {
+    try {
+        const { roomCode, username } = req.body;
+
+        if (!roomCode || !username) {
+            return res.status(400).json({ 
+                success: false, 
+                message: 'Room code and username are required' 
+            });
+        }
+
+        // Find room by code
+        const room = await Room.findOne({ roomCode: roomCode.toUpperCase() })
+            .populate('users', 'username');
+
+        if (!room) {
+            return res.status(404).json({ 
+                success: false, 
+                message: 'Room not found with this code' 
+            });
+        }
+
+        // Check if room is full
+        if (room.users.length >= room.maxUsers) {
+            return res.status(400).json({ 
+                success: false, 
+                message: 'Room is full' 
+            });
+        }
+
+        // Find or create user
+        let user = await User.findOne({ username });
+        if (!user) {
+            // Create guest user
+            const guestEmail = `${username.toLowerCase().replace(/[^a-z0-9]/g, '')}_${Date.now()}@guest.com`;
+            user = new User({
+                username,
+                email: guestEmail,
+                isGuest: true
+            });
+            await user.save();
+        }
+
+        // Check if user is already in room
+        if (!room.users.some(u => u._id.toString() === user._id.toString())) {
+            room.users.push(user._id);
+            await room.save();
+        }
+
+        // Update user status
+        user.isOnline = true;
+        user.lastSeen = new Date();
+        await user.save();
+
+        const roomUrl = `${req.protocol}://${req.get('host')}/room/${room.roomCode}`;
+
+        res.json({
+            success: true,
+            message: 'Successfully joined room',
+            room: {
+                id: room._id,
+                name: room.name,
+                description: room.description,
+                roomCode: room.roomCode,
+                currentVideo: room.currentVideo,
+                videoState: room.videoState,
+                userCount: room.users.length,
+                maxUsers: room.maxUsers,
+                roomUrl: roomUrl
+            },
+            user: {
+                id: user._id,
+                username: user.username,
+                isGuest: user.isGuest
+            }
+        });
+
+    } catch (error) {
+        console.error('Join room error:', error);
+        res.status(500).json({ 
+            success: false, 
+            message: 'Server error joining room' 
+        });
+    }
+});
+
+// Get room info by code (for preview)
+router.get('/info/:roomCode', async (req, res) => {
+    try {
+        const { roomCode } = req.params;
+
+        const room = await Room.findOne({ roomCode: roomCode.toUpperCase() })
+            .populate('adminUser', 'username avatar')
+            .populate('users', 'username avatar isOnline');
+
+        if (!room) {
+            return res.status(404).json({ 
+                success: false, 
+                message: 'Room not found' 
+            });
+        }
+
+        res.json({
+            success: true,
+            room: {
+                name: room.name,
+                description: room.description,
+                adminUser: room.adminUser,
+                userCount: room.users.length,
+                maxUsers: room.maxUsers,
+                currentVideo: room.currentVideo.url ? 'Video playing' : 'No video',
+                isPrivate: room.isPrivate,
+                createdAt: room.createdAt
+            }
+        });
+
+    } catch (error) {
+        console.error('Get room info error:', error);
+        res.status(500).json({ 
+            success: false, 
+            message: 'Server error getting room info' 
+        });
+    }
+});
+
+// Get room details by ID
 router.get('/:roomId', async (req, res) => {
     try {
+        const { roomId } = req.params;
         let room;
-        
-        // Handle special case for "default" room
-        if (req.params.roomId === 'default') {
-            room = await Room.findOne({ name: 'Default Room' })
+
+        // Try to find by room code first (8 characters), then by ObjectId
+        if (roomId.length === 8) {
+            room = await Room.findOne({ roomCode: roomId.toUpperCase() })
                 .populate('adminUser', 'username avatar')
                 .populate('users', 'username avatar isOnline');
         } else {
-            room = await Room.findById(req.params.roomId)
+            // Try to find by ObjectId
+            room = await Room.findById(roomId)
                 .populate('adminUser', 'username avatar')
                 .populate('users', 'username avatar isOnline');
         }
@@ -33,6 +265,8 @@ router.get('/:roomId', async (req, res) => {
             room: {
                 id: room._id,
                 name: room.name,
+                description: room.description,
+                roomCode: room.roomCode,
                 currentVideo: room.currentVideo,
                 videoState: room.videoState,
                 adminUser: room.adminUser,
@@ -49,60 +283,6 @@ router.get('/:roomId', async (req, res) => {
         res.status(500).json({ 
             success: false, 
             message: 'Server error getting room info' 
-        });
-    }
-});
-
-// Generate invite link for room
-router.post('/:roomId/invite', authenticateToken, async (req, res) => {
-    try {
-        let room;
-        
-        // Handle special case for "default" room
-        if (req.params.roomId === 'default') {
-            room = await Room.findOne({ name: 'Default Room' });
-        } else {
-            room = await Room.findById(req.params.roomId);
-        }
-
-        if (!room) {
-            return res.status(404).json({ 
-                success: false, 
-                message: 'Room not found' 
-            });
-        }
-
-        // Check if user is admin of the room
-        if (room.adminUser.toString() !== req.user.id) {
-            return res.status(403).json({ 
-                success: false, 
-                message: 'Only room admin can generate invite links' 
-            });
-        }
-
-        // Generate unique invite code
-        const inviteCode = crypto.randomBytes(16).toString('hex');
-        const inviteExpires = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000); // 7 days
-
-        room.inviteCode = inviteCode;
-        room.inviteExpires = inviteExpires;
-        await room.save();
-
-        const inviteUrl = `${req.protocol}://${req.get('host')}/join?code=${inviteCode}`;
-
-        res.json({
-            success: true,
-            message: 'Invite link generated successfully',
-            inviteCode,
-            inviteUrl,
-            expiresAt: inviteExpires
-        });
-
-    } catch (error) {
-        console.error('Generate invite error:', error);
-        res.status(500).json({ 
-            success: false, 
-            message: 'Server error generating invite link' 
         });
     }
 });
@@ -162,7 +342,6 @@ router.post('/join/:inviteCode', async (req, res) => {
             }
 
             // Generate a unique email for guest users to avoid duplicate key errors
-            // Use .com domain to match the email validation regex
             const guestEmail = `${guestUsername.toLowerCase().replace(/[^a-z0-9]/g, '')}_${Date.now()}@guest.com`;
             
             user = new User({
@@ -197,7 +376,7 @@ router.post('/join/:inviteCode', async (req, res) => {
                 id: user._id,
                 username: user.username,
                 isGuest: user.isGuest,
-                avatar: user.getAvatarInitials()
+                avatar: user.getAvatarInitials ? user.getAvatarInitials() : user.username.charAt(0).toUpperCase()
             }
         });
 
@@ -244,51 +423,6 @@ router.get('/invite/:inviteCode', async (req, res) => {
         res.status(500).json({ 
             success: false, 
             message: 'Server error getting invite info' 
-        });
-    }
-});
-
-// Revoke invite link
-router.delete('/:roomId/invite', authenticateToken, async (req, res) => {
-    try {
-        let room;
-        
-        // Handle special case for "default" room
-        if (req.params.roomId === 'default') {
-            room = await Room.findOne({ name: 'Default Room' });
-        } else {
-            room = await Room.findById(req.params.roomId);
-        }
-
-        if (!room) {
-            return res.status(404).json({ 
-                success: false, 
-                message: 'Room not found' 
-            });
-        }
-
-        // Check if user is admin of the room
-        if (room.adminUser.toString() !== req.user.id) {
-            return res.status(403).json({ 
-                success: false, 
-                message: 'Only room admin can revoke invite links' 
-            });
-        }
-
-        room.inviteCode = undefined;
-        room.inviteExpires = undefined;
-        await room.save();
-
-        res.json({
-            success: true,
-            message: 'Invite link revoked successfully'
-        });
-
-    } catch (error) {
-        console.error('Revoke invite error:', error);
-        res.status(500).json({ 
-            success: false, 
-            message: 'Server error revoking invite link' 
         });
     }
 });

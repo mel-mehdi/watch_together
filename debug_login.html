@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Login Debug Helper</title>
+    <link rel="stylesheet" href="/css/debug_login.css">
+</head>
+<body>
+    <h1>Login Debug Helper</h1>
+    
+    <div class="info">
+        <h3>Current localStorage:</h3>
+        <div id="localStorage-content"></div>
+    </div>
+    
+    <button onclick="clearStorage()">Clear All localStorage</button>
+    <button onclick="clearSpecific()">Clear Login-related Items</button>
+    <button onclick="showStorage()">Refresh Storage Display</button>
+    <button onclick="goToLogin()">Go to Login Page</button>
+    <button onclick="goToHome()">Go to Home Page</button>
+    
+    <script>
+        function showStorage() {
+            const content = document.getElementById('localStorage-content');
+            const items = [];
+            for (let i = 0; i < localStorage.length; i++) {
+                const key = localStorage.key(i);
+                const value = localStorage.getItem(key);
+                items.push(`<strong>${key}:</strong> ${value}`);
+            }
+            content.innerHTML = items.length > 0 ? items.join('<br>') : 'No items in localStorage';
+        }
+        
+        function clearStorage() {
+            localStorage.clear();
+            alert('All localStorage cleared!');
+            showStorage();
+        }
+        
+        function clearSpecific() {
+            localStorage.removeItem('preLoginUrl');
+            localStorage.removeItem('guestMode');
+            localStorage.removeItem('authToken');
+            localStorage.removeItem('userData');
+            alert('Login-related localStorage items cleared!');
+            showStorage();
+        }
+        
+        function goToLogin() {
+            window.location.href = '/login.html';
+        }
+        
+        function goToHome() {
+            window.location.href = '/';
+        }
+        
+        // Show storage on load
+        showStorage();
+    </script>
+</body>
+</html>
