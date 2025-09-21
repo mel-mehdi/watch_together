@@ -1,6 +1,7 @@
 const express = require('express');
 const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
+const bcrypt = require('bcryptjs');
 const nodemailer = require('nodemailer');
 const User = require('../models/User');
 const router = express.Router();
@@ -91,7 +92,8 @@ router.post('/register', async (req, res) => {
             user: {
                 id: user._id,
                 username: user.username,
-                email: user.email
+                email: user.email,
+                isAdmin: user.isAdmin || false
             }
         });
 
@@ -154,7 +156,8 @@ router.post('/login', async (req, res) => {
             user: {
                 id: user._id,
                 username: user.username,
-                email: user.email
+                email: user.email,
+                isAdmin: user.isAdmin || false
             }
         });
 
@@ -188,6 +191,7 @@ router.get('/me', async (req, res) => {
                 id: user._id,
                 username: user.username,
                 email: user.email,
+                isAdmin: user.isAdmin || false,
                 createdAt: user.createdAt,
                 lastLogin: user.lastLogin
             }
@@ -227,7 +231,8 @@ router.post('/verify-token', async (req, res) => {
             user: {
                 id: user._id,
                 username: user.username,
-                email: user.email
+                email: user.email,
+                isAdmin: user.isAdmin || false
             }
         });
 
@@ -269,7 +274,8 @@ router.post('/refresh-token', async (req, res) => {
             user: {
                 id: user._id,
                 username: user.username,
-                email: user.email
+                email: user.email,
+                isAdmin: user.isAdmin || false
             }
         });
 
@@ -440,6 +446,72 @@ router.post('/reset-password', async (req, res) => {
             success: false, 
             message: 'Server error resetting password' 
         });
+    }
+});
+
+// Development endpoint to create/promote admin user (remove in production)
+router.post('/make-admin', async (req, res) => {
+    try {
+        const { username, password } = req.body;
+        
+        if (!username) {
+            return res.status(400).json({ error: 'Username required' });
+        }
+        
+        // Check if any admin already exists
+        const existingAdmin = await User.findOne({ isAdmin: true });
+        if (existingAdmin) {
+            return res.status(400).json({ 
+                error: 'Admin user already exists',
+                adminUser: existingAdmin.username
+            });
+        }
+        
+        // Find user or create new admin user
+        let user = await User.findOne({ username });
+        
+        if (user) {
+            // Promote existing user to admin
+            user.isAdmin = true;
+            await user.save();
+            
+            return res.json({ 
+                success: true,
+                message: `User '${username}' promoted to admin`,
+                username: user.username,
+                email: user.email
+            });
+        } else if (password) {
+            // Create new admin user
+            const salt = await bcrypt.genSalt(10);
+            const hashedPassword = await bcrypt.hash(password, salt);
+            
+            user = new User({
+                username,
+                email: `${username}@admin.local`,
+                password: hashedPassword,
+                isAdmin: true,
+                isGuest: false
+            });
+            
+            await user.save();
+            
+            return res.json({ 
+                success: true,
+                message: `Admin user '${username}' created successfully`,
+                username: user.username,
+                email: user.email,
+                note: 'You can now login with these credentials'
+            });
+        } else {
+            return res.status(400).json({ 
+                error: 'User not found. Provide password to create new admin user.' 
+            });
+        }
+        
+    } catch (error) {
+        console.error('Error creating admin:', error);
+        res.status(500).json({ error: 'Server error creating admin user' });
     }
 });
 

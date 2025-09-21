@@ -1,0 +1,398 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CROWD Admin Panel - Watch Together</title>
+    <meta name="description" content="Admin panel for managing the Watch Together platform">
+    
+    <!-- Preconnect for performance -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    
+    <!-- Modern Typography -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    
+    <!-- Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <!-- Favicon -->
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🛠️</text></svg>">
+    
+    <!-- Admin Styles -->
+    <link rel="stylesheet" href="/css/styles.css">
+    <link rel="stylesheet" href="/css/admin.css">
+</head>
+<body class="admin-body">
+    <!-- Header -->
+    <header class="admin-header">
+        <div class="admin-header-content">
+            <div class="admin-logo">
+                <i class="fas fa-crown"></i>
+                <h1>CROWD Admin Panel</h1>
+            </div>
+            <div class="admin-header-actions">
+                <div class="admin-user-info" id="admin-user-info">
+                    <!-- Admin user info will be inserted here -->
+                </div>
+                <button class="admin-logout-btn" onclick="logout()">
+                    <i class="fas fa-sign-out-alt"></i>
+                    Logout
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Admin Container -->
+    <div class="admin-container">
+        <!-- Sidebar Navigation -->
+        <nav class="admin-sidebar">
+            <div class="admin-nav">
+                <button class="admin-nav-item active" data-section="dashboard">
+                    <i class="fas fa-tachometer-alt"></i>
+                    Dashboard
+                </button>
+                <button class="admin-nav-item" data-section="users">
+                    <i class="fas fa-users"></i>
+                    Users
+                </button>
+                <button class="admin-nav-item" data-section="rooms">
+                    <i class="fas fa-door-open"></i>
+                    Rooms
+                </button>
+                <button class="admin-nav-item" data-section="analytics">
+                    <i class="fas fa-chart-bar"></i>
+                    Analytics
+                </button>
+                <button class="admin-nav-item" data-section="settings">
+                    <i class="fas fa-cog"></i>
+                    Settings
+                </button>
+                <button class="admin-nav-item" data-section="logs">
+                    <i class="fas fa-file-alt"></i>
+                    System Logs
+                </button>
+            </div>
+        </nav>
+
+        <!-- Main Content Area -->
+        <main class="admin-main">
+            <!-- Dashboard Section -->
+            <section id="dashboard-section" class="admin-section active">
+                <div class="admin-section-header">
+                    <h2><i class="fas fa-tachometer-alt"></i> Dashboard</h2>
+                    <p>Overview of the Watch Together platform</p>
+                </div>
+
+                <!-- Stats Cards -->
+                <div class="admin-stats-grid">
+                    <div class="admin-stat-card">
+                        <div class="stat-icon">
+                            <i class="fas fa-users"></i>
+                        </div>
+                        <div class="stat-content">
+                            <h3 id="total-users">0</h3>
+                            <p>Total Users</p>
+                        </div>
+                    </div>
+                    <div class="admin-stat-card">
+                        <div class="stat-icon">
+                            <i class="fas fa-door-open"></i>
+                        </div>
+                        <div class="stat-content">
+                            <h3 id="active-rooms">0</h3>
+                            <p>Active Rooms</p>
+                        </div>
+                    </div>
+                    <div class="admin-stat-card">
+                        <div class="stat-icon">
+                            <i class="fas fa-eye"></i>
+                        </div>
+                        <div class="stat-content">
+                            <h3 id="online-users">0</h3>
+                            <p>Online Users</p>
+                        </div>
+                    </div>
+                    <div class="admin-stat-card">
+                        <div class="stat-icon">
+                            <i class="fas fa-video"></i>
+                        </div>
+                        <div class="stat-content">
+                            <h3 id="videos-shared">0</h3>
+                            <p>Videos Shared</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Recent Activity -->
+                <div class="admin-card">
+                    <div class="admin-card-header">
+                        <h3><i class="fas fa-clock"></i> Recent Activity</h3>
+                        <button class="refresh-btn" onclick="refreshActivity()">
+                            <i class="fas fa-sync-alt"></i>
+                        </button>
+                    </div>
+                    <div class="admin-card-body">
+                        <div id="recent-activity" class="activity-list">
+                            <!-- Activity items will be loaded here -->
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Users Section -->
+            <section id="users-section" class="admin-section">
+                <div class="admin-section-header">
+                    <h2><i class="fas fa-users"></i> User Management</h2>
+                    <p>Manage registered users and their permissions</p>
+                </div>
+
+                <!-- User Controls -->
+                <div class="admin-controls">
+                    <div class="search-container">
+                        <input type="text" id="user-search" placeholder="Search users..." class="admin-search">
+                        <i class="fas fa-search"></i>
+                    </div>
+                    <button class="admin-btn primary" onclick="refreshUsers()">
+                        <i class="fas fa-sync-alt"></i>
+                        Refresh
+                    </button>
+                </div>
+
+                <!-- Users Table -->
+                <div class="admin-card">
+                    <div class="admin-table-container">
+                        <table class="admin-table">
+                            <thead>
+                                <tr>
+                                    <th>User</th>
+                                    <th>Email</th>
+                                    <th>Status</th>
+                                    <th>Joined</th>
+                                    <th>Last Active</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="users-table-body">
+                                <!-- User rows will be loaded here -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Rooms Section -->
+            <section id="rooms-section" class="admin-section">
+                <div class="admin-section-header">
+                    <h2><i class="fas fa-door-open"></i> Room Management</h2>
+                    <p>Monitor and manage active rooms</p>
+                </div>
+
+                <!-- Room Controls -->
+                <div class="admin-controls">
+                    <div class="search-container">
+                        <input type="text" id="room-search" placeholder="Search rooms..." class="admin-search">
+                        <i class="fas fa-search"></i>
+                    </div>
+                    <button class="admin-btn primary" onclick="refreshRooms()">
+                        <i class="fas fa-sync-alt"></i>
+                        Refresh
+                    </button>
+                </div>
+
+                <!-- Rooms Table -->
+                <div class="admin-card">
+                    <div class="admin-table-container">
+                        <table class="admin-table">
+                            <thead>
+                                <tr>
+                                    <th>Room Code</th>
+                                    <th>Name</th>
+                                    <th>Admin</th>
+                                    <th>Users</th>
+                                    <th>Current Video</th>
+                                    <th>Created</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="rooms-table-body">
+                                <!-- Room rows will be loaded here -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Analytics Section -->
+            <section id="analytics-section" class="admin-section">
+                <div class="admin-section-header">
+                    <h2><i class="fas fa-chart-bar"></i> Analytics</h2>
+                    <p>Platform usage statistics and insights</p>
+                </div>
+
+                <!-- Analytics Cards -->
+                <div class="admin-analytics-grid">
+                    <div class="admin-card">
+                        <div class="admin-card-header">
+                            <h3>Daily Active Users</h3>
+                        </div>
+                        <div class="admin-card-body">
+                            <canvas id="daily-users-chart"></canvas>
+                        </div>
+                    </div>
+                    <div class="admin-card">
+                        <div class="admin-card-header">
+                            <h3>Room Activity</h3>
+                        </div>
+                        <div class="admin-card-body">
+                            <canvas id="room-activity-chart"></canvas>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Settings Section -->
+            <section id="settings-section" class="admin-section">
+                <div class="admin-section-header">
+                    <h2><i class="fas fa-cog"></i> Platform Settings</h2>
+                    <p>Configure global platform settings</p>
+                </div>
+
+                <!-- Settings Forms -->
+                <div class="admin-settings-grid">
+                    <div class="admin-card">
+                        <div class="admin-card-header">
+                            <h3>General Settings</h3>
+                        </div>
+                        <div class="admin-card-body">
+                            <form id="general-settings-form">
+                                <div class="form-group">
+                                    <label>Platform Name</label>
+                                    <input type="text" id="platform-name" value="Watch Together">
+                                </div>
+                                <div class="form-group">
+                                    <label>Max Users Per Room</label>
+                                    <input type="number" id="max-users-room" value="50">
+                                </div>
+                                <div class="form-group">
+                                    <label>Allow Guest Users</label>
+                                    <input type="checkbox" id="allow-guests" checked>
+                                </div>
+                                <button type="submit" class="admin-btn primary">Save Settings</button>
+                            </form>
+                        </div>
+                    </div>
+
+                    <div class="admin-card">
+                        <div class="admin-card-header">
+                            <h3>Security Settings</h3>
+                        </div>
+                        <div class="admin-card-body">
+                            <form id="security-settings-form">
+                                <div class="form-group">
+                                    <label>Require Email Verification</label>
+                                    <input type="checkbox" id="require-email" checked>
+                                </div>
+                                <div class="form-group">
+                                    <label>Auto-ban Threshold</label>
+                                    <input type="number" id="auto-ban-threshold" value="5">
+                                </div>
+                                <div class="form-group">
+                                    <label>Rate Limit (requests/minute)</label>
+                                    <input type="number" id="rate-limit" value="100">
+                                </div>
+                                <button type="submit" class="admin-btn primary">Save Settings</button>
+                            </form>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- System Logs Section -->
+            <section id="logs-section" class="admin-section">
+                <div class="admin-section-header">
+                    <h2><i class="fas fa-file-alt"></i> System Logs</h2>
+                    <p>Monitor system activity and errors</p>
+                </div>
+
+                <!-- Log Controls -->
+                <div class="admin-controls">
+                    <select id="log-level" class="admin-select">
+                        <option value="all">All Levels</option>
+                        <option value="error">Errors</option>
+                        <option value="warn">Warnings</option>
+                        <option value="info">Info</option>
+                    </select>
+                    <button class="admin-btn primary" onclick="refreshLogs()">
+                        <i class="fas fa-sync-alt"></i>
+                        Refresh
+                    </button>
+                    <button class="admin-btn secondary" onclick="clearLogs()">
+                        <i class="fas fa-trash"></i>
+                        Clear Logs
+                    </button>
+                </div>
+
+                <!-- Logs Display -->
+                <div class="admin-card">
+                    <div class="admin-card-body">
+                        <div id="system-logs" class="logs-container">
+                            <!-- Logs will be loaded here -->
+                        </div>
+                    </div>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <!-- Modals -->
+    <!-- User Edit Modal -->
+    <div id="edit-user-modal" class="admin-modal">
+        <div class="admin-modal-content">
+            <div class="admin-modal-header">
+                <h3>Edit User</h3>
+                <button class="admin-modal-close">&times;</button>
+            </div>
+            <div class="admin-modal-body">
+                <form id="edit-user-form">
+                    <input type="hidden" id="edit-user-id">
+                    <div class="form-group">
+                        <label>Username</label>
+                        <input type="text" id="edit-username" required>
+                    </div>
+                    <div class="form-group">
+                        <label>Email</label>
+                        <input type="email" id="edit-email" required>
+                    </div>
+                    <div class="form-group">
+                        <label>Role</label>
+                        <select id="edit-role">
+                            <option value="user">User</option>
+                            <option value="admin">Admin</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Status</label>
+                        <select id="edit-status">
+                            <option value="active">Active</option>
+                            <option value="suspended">Suspended</option>
+                            <option value="banned">Banned</option>
+                        </select>
+                    </div>
+                </form>
+            </div>
+            <div class="admin-modal-footer">
+                <button class="admin-btn secondary" onclick="closeEditUserModal()">Cancel</button>
+                <button class="admin-btn primary" onclick="saveUserChanges()">Save Changes</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Include Socket.io -->
+    <script src="/socket.io/socket.io.js"></script>
+    <!-- Include Chart.js for analytics -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- Admin JavaScript -->
+    <script src="/js/admin.js"></script>
+</body>
+</html>

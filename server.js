@@ -37,6 +37,7 @@ const VideoHistory = require('./models/VideoHistory');
 // Import routes
 const authRoutes = require('./routes/auth');
 const roomRoutes = require('./routes/rooms');
+const adminRoutes = require('./routes/admin');
 
 const app = express();
 const server = http.createServer(app);
@@ -76,6 +77,12 @@ if (isDatabaseConnected) {
 // Routes
 app.use('/api/auth', authRoutes);
 app.use('/api/rooms', roomRoutes);
+app.use('/api/admin', adminRoutes);
+
+// Serve admin page (protected route)
+app.get('/admin', (req, res) => {
+    res.sendFile(__dirname + '/public/admin.html');
+});
 
 // Serve home page as the default landing page
 app.get('/', (req, res) => {
@@ -101,9 +108,49 @@ const users = {};
 const socketRooms = new Map(); // socketId -> roomId
 // Store admin user for each room
 const roomAdmins = new Map(); // roomId -> socketId
+// Store system message configuration for each room
+const roomSystemMessageConfig = new Map(); // roomId -> config object
 
 // Voice chat users
 const voiceChatUsers = {};
+
+// Default system message configuration
+function getDefaultSystemMessageConfig() {
+    return {
+        showJoinLeaveMessages: false,
+        showAdminChangeMessages: false,
+        showVideoChangeMessages: true,
+        showCriticalMessages: true
+    };
+}
+
+// Helper function to send system messages based on room configuration
+function sendSystemMessage(roomId, message, messageType = 'critical') {
+    const config = roomSystemMessageConfig.get(roomId) || getDefaultSystemMessageConfig();
+    
+    let shouldSend = false;
+    switch (messageType) {
+        case 'join-leave':
+            shouldSend = config.showJoinLeaveMessages;
+            break;
+        case 'admin-change':
+            shouldSend = config.showAdminChangeMessages;
+            break;
+        case 'video-change':
+            shouldSend = config.showVideoChangeMessages;
+            break;
+        case 'critical':
+        default:
+            shouldSend = config.showCriticalMessages;
+            break;
+    }
+    
+    if (shouldSend) {
+        io.to(roomId).emit('system message', message);
+    }
+    
+    return shouldSend;
+}
 
 function detectVideoType(url) {
     if (!url) return 'unknown';
@@ -239,6 +286,14 @@ io.on('connection', async (socket) => {
                 socket.emit('admin user', users[roomAdmin].username);
             }
 
+            // Initialize room system message config if it doesn't exist
+            if (!roomSystemMessageConfig.has(actualRoomId)) {
+                roomSystemMessageConfig.set(actualRoomId, getDefaultSystemMessageConfig());
+            }
+
+            // Send current system message configuration
+            socket.emit('system message config', roomSystemMessageConfig.get(actualRoomId));
+
             // Load recent messages for this room
             if (isDatabaseConnected) {
                 try {
@@ -251,10 +306,10 @@ io.on('connection', async (socket) => {
 
             // Notify others in the room
             const systemMessage = `${username} has joined the room`;
-            socket.to(actualRoomId).emit('system message', systemMessage);
+            const messageSent = sendSystemMessage(actualRoomId, systemMessage, 'join-leave');
             
-            // Save join message to database
-            if (isDatabaseConnected) {
+            // Save join message to database (only if it was sent to users)
+            if (isDatabaseConnected && messageSent) {
                 try {
                     const message = new Message({
                         roomId: actualRoomId,
@@ -315,6 +370,43 @@ io.on('connection', async (socket) => {
                 console.error('Database error saving chat message:', error.message);
             }
         }
+    });
+    
+    // Handle system message configuration updates
+    socket.on('update system message config', (config) => {
+        const user = users[socket.id];
+        if (!user) {
+            socket.emit('error message', 'Please join a room first');
+            return;
+        }
+
+        // Only admin can update system message configuration
+        if (roomAdmins.get(user.roomId) !== socket.id) {
+            socket.emit('error message', 'Only admin can change chat notification settings');
+            return;
+        }
+
+        // Validate configuration object
+        if (!config || typeof config !== 'object') {
+            socket.emit('error message', 'Invalid configuration');
+            return;
+        }
+
+        // Update room configuration
+        const currentConfig = roomSystemMessageConfig.get(user.roomId) || getDefaultSystemMessageConfig();
+        const newConfig = {
+            showJoinLeaveMessages: typeof config.showJoinLeaveMessages === 'boolean' ? config.showJoinLeaveMessages : currentConfig.showJoinLeaveMessages,
+            showAdminChangeMessages: typeof config.showAdminChangeMessages === 'boolean' ? config.showAdminChangeMessages : currentConfig.showAdminChangeMessages,
+            showVideoChangeMessages: typeof config.showVideoChangeMessages === 'boolean' ? config.showVideoChangeMessages : currentConfig.showVideoChangeMessages,
+            showCriticalMessages: typeof config.showCriticalMessages === 'boolean' ? config.showCriticalMessages : currentConfig.showCriticalMessages
+        };
+
+        roomSystemMessageConfig.set(user.roomId, newConfig);
+
+        // Broadcast the updated configuration to all users in the room
+        io.to(user.roomId).emit('system message config', newConfig);
+
+        console.log(`Admin ${user.username} updated system message config for room ${user.roomId}:`, newConfig);
     });
     
     // Handle video play event
@@ -467,10 +559,10 @@ io.on('connection', async (socket) => {
                 io.to(user.roomId).emit('change video', url);
                 
                 const systemMessage = `${user.username} changed the video`;
-                io.to(user.roomId).emit('system message', systemMessage);
+                const messageSent = sendSystemMessage(user.roomId, systemMessage, 'video-change');
                 
-                // Save system message to database
-                if (isDatabaseConnected) {
+                // Save system message to database (only if it was sent to users)
+                if (isDatabaseConnected && messageSent) {
                     const message = new Message({
                         roomId: user.roomId,
                         username: 'System',
@@ -513,7 +605,7 @@ io.on('connection', async (socket) => {
             
             // Notify all users in the room about admin change
             io.to(user.roomId).emit('admin user', users[targetSocketId].username);
-            io.to(user.roomId).emit('system message', `${users[targetSocketId].username} is now the admin controller`);
+            sendSystemMessage(user.roomId, `${users[targetSocketId].username} is now the admin controller`, 'admin-change');
             
             // Notify the new admin
             io.to(targetSocketId).emit('admin status', true);
@@ -597,11 +689,11 @@ io.on('connection', async (socket) => {
         if (user) {
             const systemMessage = `${user.username} has left the room`;
             
-            // Notify others in the same room
-            socket.to(user.roomId).emit('system message', systemMessage);
+            // Notify others in the same room using the configuration
+            const messageSent = sendSystemMessage(user.roomId, systemMessage, 'join-leave');
             
-            // Save system message to database
-            if (isDatabaseConnected && user.roomId) {
+            // Save system message to database (only if it was sent to users)
+            if (isDatabaseConnected && user.roomId && messageSent) {
                 try {
                     const message = new Message({
                         roomId: user.roomId,
@@ -633,10 +725,10 @@ io.on('connection', async (socket) => {
                     io.to(user.roomId).emit('admin user', users[newAdminSocketId].username);
                     
                     const adminMessage = `${users[newAdminSocketId].username} is now the admin controller`;
-                    io.to(user.roomId).emit('system message', adminMessage);
+                    const adminMessageSent = sendSystemMessage(user.roomId, adminMessage, 'admin-change');
                     
-                    // Save admin change to database
-                    if (isDatabaseConnected) {
+                    // Save admin change to database (only if it was sent to users)
+                    if (isDatabaseConnected && adminMessageSent) {
                         try {
                             const message = new Message({
                                 roomId: user.roomId,
@@ -671,6 +763,21 @@ io.on('connection', async (socket) => {
         
         console.log('A user disconnected');
     });
+    
+    // Admin socket handlers
+    socket.on('admin join', () => {
+        console.log('Admin connected to admin panel');
+        socket.join('admin-room');
+        
+        // Send initial admin stats
+        const stats = {
+            totalUsers: Object.keys(users).length,
+            activeRooms: roomAdmins.size,
+            onlineUsers: Object.keys(users).length,
+            videosShared: 100 // Mock data
+        };
+        socket.emit('admin stats update', stats);
+    });
 });
 
 // Health check endpoint for Docker
@@ -694,6 +801,6 @@ app.get('/health', (req, res) => {
 });
 
 const PORT = process.env.PORT || 3000;
-server.listen(PORT, () => {
+server.listen(PORT, '0.0.0.0', () => {
   console.log(`Server is running on port ${PORT}`);
 });

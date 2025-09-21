@@ -45,6 +45,8 @@ docker-compose up -d
 - **MongoDB**: mongodb://localhost:27017
 - **Health Check**: http://localhost:3000/health
 
+To access the application from other devices on the same network, use `http://<your-local-ip>:3000`. To find your local IP address, run `hostname -I` in the terminal.
+
 ## Development Setup
 
 ### Prerequisites
@@ -274,6 +276,12 @@ GET /api/db/messages   # Get all messages (admin)
    ```bash
    make fresh-install
    ```
+
+5. **Cannot access from other devices on the network**
+   - Ensure the server is listening on `0.0.0.0` (configured in `server.js`).
+   - Check your local IP with `hostname -I`.
+   - Verify that port 3000 is not blocked by firewall (e.g., if UFW is installed, run `sudo ufw allow 3000`).
+   - Make sure devices are on the same network.
 
 ### Logs and Debugging
 

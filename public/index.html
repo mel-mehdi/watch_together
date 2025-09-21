@@ -63,26 +63,22 @@
                 <i class="fas fa-times"></i>
             </button>
             <h2><i class="fas fa-user-plus"></i> Invite Friends to Room</h2>
-            <p class="admin-msg">
+            <p class="admin-msg">Share this link with friends to invite them to join this room</p>
                 Share this link with friends to invite them to watch together
             </p>
             
             <!-- Invite Link Display -->
             <div class="invite-link-container">
                 <div class="invite-link-display">
-                    <input type="text" id="invite-link" readonly placeholder="Generate an invite link">
+                    <input type="text" id="invite-link" readonly placeholder="Generating room join link...">
                     <button id="copy-invite-link" class="copy-btn" disabled>
                         <i class="fas fa-copy"></i>
                     </button>
                 </div>
                 <div class="invite-actions">
-                    <button id="generate-invite" class="primary-btn">
-                        <i class="fas fa-link"></i>
-                        Generate Invite Link
-                    </button>
                     <button id="revoke-invite" class="secondary-btn hidden">
                         <i class="fas fa-times-circle"></i>
-                        Revoke Link
+                        Clear Link
                     </button>
                 </div>
             </div>
@@ -134,13 +130,25 @@
                     <div class="chat-icon">
                         <i class="fas fa-comments"></i>
                     </div>
-                    <div class="chat-info">
-                        <span class="chat-title">Live Chat</span>
-                        <span class="online-users" id="online-users">0 users online</span>
-                    </div>
                 </div>
-                <div class="chat-header-right" id="user-info-compact">
+                <div class="chat-header-right">
+                    <!-- Header Action Buttons -->
+                    <div class="header-action-buttons">
+                        <button id="invite-button" class="header-btn invite-btn" title="Invite Friends">
+                            <i class="fas fa-user-plus"></i>
+                        </button>
+                        <button id="room-settings" class="header-btn settings-btn" title="Room Settings">
+                            <i class="fas fa-cog"></i>
+                        </button>
+                        <button id="video-history-btn" class="header-btn history-btn" title="Video History">
+                            <i class="fas fa-history"></i>
+                        </button>
+                        <button id="exit-room-btn" class="header-btn exit-btn" title="Exit Room">
+                            <i class="fas fa-sign-out-alt"></i>
+                        </button>
+                    </div>
                     <!-- User info will be inserted here by JavaScript -->
+                    <div id="user-info-compact"></div>
                 </div>
             </div>
             
@@ -172,12 +180,7 @@
         <div class="video-section">
             <!-- Video Player Container -->
             <div class="video-container">
-                <!-- Admin Notice -->
-                <div class="admin-notice" id="admin-notice"></div>
-                
-                <!-- Video Type Badge -->
-                <div class="video-type-badge hidden" id="video-type-badge"></div>
-                
+    
                 <!-- Admin Viewing Notice -->
                 <div class="admin-viewing-notice" id="admin-viewing-notice">
                     <i class="fas fa-crown"></i>
@@ -204,81 +207,98 @@
                     maxlength="2000">
                 <button class="change-video-btn" id="change-video">
                     <i class="fas fa-play"></i>
-                    Load Video
                 </button>
             </div>
             
             <!-- Admin Controls Panel -->
-            <div class="admin-controls" id="admin-controls">
-                <p>
-                    <i class="fas fa-crown"></i>
-                    Video Controls
-                </p>
+            <!-- <div class="admin-controls" id="admin-controls">
                 <div class="admin-video-controls">
                     <button id="admin-play" class="admin-btn">
                         <i class="fas fa-play"></i> 
-                        Play for All
                     </button>
                     <button id="admin-pause" class="admin-btn">
                         <i class="fas fa-pause"></i> 
-                        Pause for All
                     </button>
                     <button id="admin-restart" class="admin-btn">
                         <i class="fas fa-redo"></i> 
-                        Restart Video
                     </button>
                 </div>
-                
-                <!-- Room Management Controls -->
-                <div class="room-management-controls">
-                    <button id="invite-button" class="admin-btn invite-btn">
-                        <i class="fas fa-user-plus"></i>
-                        Invite Friends
-                    </button>
-                    <button id="room-settings" class="admin-btn settings-btn">
-                        <i class="fas fa-cog"></i>
-                        Room Settings
-                    </button>
-                </div>
-                
-                <!-- System Message Settings -->
-                <div class="system-message-settings">
-                    <p class="chat-timestamp">
-                        <i class="fas fa-comment-dots"></i>
-                        Chat Notifications
-                    </p>
-                    <div class="settings-toggles">
-                        <label class="toggle-label">
-                            <input type="checkbox" id="toggle-join-leave" checked>
-                            <span class="toggle-text">Join/Leave messages</span>
-                        </label>
-                        <label class="toggle-label">
-                            <input type="checkbox" id="toggle-admin-change" checked>
-                            <span class="toggle-text">Admin change messages</span>
-                        </label>
-                        <label class="toggle-label">
-                            <input type="checkbox" id="toggle-video-change" checked>
-                            <span class="toggle-text">Video change messages</span>
-                        </label>
-                    </div>
-                </div>
-            </div>
+            </div> -->
             
             <!-- Request Admin Button -->
             <div id="request-admin-container">
                 <button class="request-admin-btn" id="request-admin">
                     <i class="fas fa-hand-paper"></i>
-                    Request Control
                 </button>
             </div>
             
-            <!-- Video History -->
-            <div class="video-history-btn-container">
-                <button id="video-history-btn" class="video-history-btn">
-                    <i class="fas fa-history"></i> 
-                    Video History
-                </button>
-                <div id="video-history" class="video-history-container"></div>
+            <!-- Video History Container (hidden by default) -->
+            <div id="video-history" class="video-history-container"></div>
+        </div>
+    </div>
+    
+    <!-- Room Settings Modal -->
+    <div class="modal" id="room-settings-modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <!-- <h2><i class="fas fa-cog"></i> Room Settings</h2> -->
+                <button class="close-btn" id="close-room-settings-modal">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="settings-section">
+                    <h3><i class="fas fa-comment-dots"></i> Chat Notifications</h3>
+                    <p class="settings-description">Control which system messages appear in the chat. Only the room admin can change these settings.</p>
+                    
+                    <div class="settings-toggles">
+                        <label class="toggle-label">
+                            <input type="checkbox" id="modal-toggle-join-leave">
+                            <span class="toggle-text">
+                                <i class="fas fa-sign-in-alt"></i>
+                                Join/Leave messages
+                            </span>
+                            <small class="toggle-description">Show when users join or leave the room</small>
+                        </label>
+                        
+                        <label class="toggle-label">
+                            <input type="checkbox" id="modal-toggle-admin-change" checked>
+                            <span class="toggle-text">
+                                <i class="fas fa-crown"></i>
+                                Admin change messages
+                            </span>
+                            <small class="toggle-description">Show when admin control is transferred</small>
+                        </label>
+                        
+                        <label class="toggle-label">
+                            <input type="checkbox" id="modal-toggle-video-change" checked>
+                            <span class="toggle-text">
+                                <i class="fas fa-video"></i>
+                                Video change messages
+                            </span>
+                            <small class="toggle-description">Show when the video is changed</small>
+                        </label>
+                    </div>
+                </div>
+                
+                <div class="settings-section">
+                    <h3><i class="fas fa-info-circle"></i> Room Information</h3>
+                    <div class="room-info">
+                        <div class="info-item">
+                            <label>Room Code:</label>
+                            <span id="room-code-display">Loading...</span>
+                        </div>
+                        <div class="info-item">
+                            <label>Current Admin:</label>
+                            <span id="current-admin-display">Loading...</span>
+                        </div>
+                        <div class="info-item">
+                            <label>Connected Users:</label>
+                            <span id="connected-users-count">0</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="secondary-btn" id="close-room-settings-btn">Close</button>
             </div>
         </div>
     </div>

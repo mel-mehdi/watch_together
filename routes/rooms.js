@@ -427,4 +427,91 @@ router.get('/invite/:inviteCode', async (req, res) => {
     }
 });
 
+// Generate invite link for existing room
+router.post('/:roomId/invite', async (req, res) => {
+    try {
+        const { roomId } = req.params;
+        
+        // Find the room by ID or room code
+        let room;
+        if (roomId.length === 8) {
+            // It's a room code
+            room = await Room.findOne({ roomCode: roomId.toUpperCase() });
+        } else {
+            // It's an ObjectId
+            room = await Room.findById(roomId);
+        }
+
+        if (!room) {
+            return res.status(404).json({ 
+                success: false, 
+                message: 'Room not found' 
+            });
+        }
+
+        // Generate new invite code
+        const inviteCode = crypto.randomBytes(16).toString('hex');
+        room.inviteCode = inviteCode;
+        room.inviteExpires = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000); // 7 days
+        await room.save();
+
+        const inviteUrl = `${req.protocol}://${req.get('host')}/join?code=${inviteCode}`;
+
+        res.json({
+            success: true,
+            inviteCode: inviteCode,
+            inviteUrl: inviteUrl,
+            expiresAt: room.inviteExpires
+        });
+
+    } catch (error) {
+        console.error('Generate invite error:', error);
+        res.status(500).json({ 
+            success: false, 
+            message: 'Server error generating invite' 
+        });
+    }
+});
+
+// Revoke invite link
+router.delete('/:roomId/invite', async (req, res) => {
+    try {
+        const { roomId } = req.params;
+        
+        // Find the room by ID or room code
+        let room;
+        if (roomId.length === 8) {
+            // It's a room code
+            room = await Room.findOne({ roomCode: roomId.toUpperCase() });
+        } else {
+            // It's an ObjectId
+            room = await Room.findById(roomId);
+        }
+
+        if (!room) {
+            return res.status(404).json({ 
+                success: false, 
+                message: 'Room not found' 
+            });
+        }
+
+        // Remove invite code
+        room.inviteCode = null;
+        room.inviteExpires = null;
+        await room.save();
+
+        res.json({
+            success: true,
+            message: 'Invite link revoked successfully'
+        });
+
+    } catch (error) {
+        console.error('Revoke invite error:', error);
+        res.status(500).json({ 
+            success: false, 
+            message: 'Server error revoking invite' 
+        });
+    }
+});
+
 module.exports = router;

@@ -954,6 +954,63 @@ body {
     transform: translateY(-1px);
 }
 
+/* Header Action Buttons */
+.header-action-buttons {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.header-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-sm);
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: var(--transition-smooth);
+    font-size: 14px;
+}
+
+.header-btn:hover {
+    background: var(--bg-tertiary);
+    border-color: var(--primary-color);
+    color: var(--primary-color);
+    transform: translateY(-1px);
+    box-shadow: var(--shadow-sm);
+}
+
+.header-btn.active {
+    background: var(--primary-color);
+    border-color: var(--primary-color);
+    color: white;
+    box-shadow: var(--shadow-glow);
+}
+
+.header-btn.invite-btn:hover {
+    border-color: var(--success-color);
+    color: var(--success-color);
+}
+
+.header-btn.settings-btn:hover {
+    border-color: var(--accent-color);
+    color: var(--accent-color);
+}
+
+.header-btn.history-btn:hover {
+    border-color: var(--warning-color);
+    color: var(--warning-color);
+}
+
+.header-btn.exit-btn:hover {
+    border-color: var(--error-color);
+    color: var(--error-color);
+}
+
 /* Video History System */
 .video-history-btn-container {
     display: flex;
@@ -1082,6 +1139,144 @@ body {
 
 .timestamp {
     font-weight: 400;
+}
+
+/* Enhanced Video History Styles */
+.video-history-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 16px;
+    background: var(--bg-tertiary);
+    border-bottom: 1px solid var(--border-color);
+}
+
+.video-history-header h3 {
+    margin: 0;
+    color: var(--text-primary);
+    font-size: 16px;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.close-history-btn {
+    background: transparent;
+    border: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    padding: 4px;
+    border-radius: var(--radius-sm);
+    transition: var(--transition-fast);
+}
+
+.close-history-btn:hover {
+    color: var(--text-primary);
+    background: var(--bg-secondary);
+}
+
+.video-history-loading {
+    padding: 32px;
+    text-align: center;
+    color: var(--text-muted);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+}
+
+.video-history-loading i {
+    font-size: 24px;
+    color: var(--primary-color);
+}
+
+.video-history-empty {
+    padding: 32px;
+    text-align: center;
+    color: var(--text-muted);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+}
+
+.video-history-empty i {
+    font-size: 48px;
+    color: var(--text-muted);
+    opacity: 0.5;
+}
+
+.video-history-list {
+    max-height: 400px;
+    overflow-y: auto;
+}
+
+.video-history-item {
+    display: flex;
+    align-items: center;
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--border-color);
+    cursor: pointer;
+    transition: var(--transition-fast);
+}
+
+.video-history-item:last-child {
+    border-bottom: none;
+}
+
+.video-history-item:hover {
+    background: var(--bg-tertiary);
+}
+
+.video-info {
+    flex: 1;
+    min-width: 0;
+}
+
+.video-title {
+    color: var(--text-primary);
+    font-size: 14px;
+    font-weight: 600;
+    margin-bottom: 4px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.video-url {
+    color: var(--text-muted);
+    font-size: 12px;
+    margin-bottom: 2px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.video-date {
+    color: var(--text-muted);
+    font-size: 11px;
+}
+
+.replay-btn {
+    background: var(--primary-color);
+    border: none;
+    color: white;
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: var(--transition-fast);
+    flex-shrink: 0;
+    margin-left: 12px;
+}
+
+.replay-btn:hover {
+    background: var(--primary-dark);
+    transform: scale(1.1);
 }
 
 /* Loading States */

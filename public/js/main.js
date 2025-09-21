@@ -57,10 +57,10 @@ const usersInCall = document.getElementById('users-in-call');
 const videoHistoryBtn = document.getElementById('video-history-btn'); 
 const videoHistoryContainer = document.getElementById('video-history');
 
-// System message configuration elements
-const toggleJoinLeave = document.getElementById('toggle-join-leave');
-const toggleAdminChange = document.getElementById('toggle-admin-change');
-const toggleVideoChange = document.getElementById('toggle-video-change');
+// System message configuration elements (using modal versions)
+const toggleJoinLeave = null; // Using modal-toggle-join-leave instead
+const toggleAdminChange = null; // Using modal-toggle-admin-change instead  
+const toggleVideoChange = null; // Using modal-toggle-video-change instead
 
 let username = '';
 let isAdmin = false;
@@ -1622,86 +1622,26 @@ function setupYouTubeEventListeners() {
 // Update admin UI
 function updateAdminUI() {
     if (isAdmin) {
-        adminControls.style.display = 'block';
-        adminNotice.style.display = 'none'; // Hide admin notice when you're the admin
-        requestAdminContainer.style.display = 'none';
-    } else {
-        adminControls.style.display = 'none';
-        adminNotice.style.display = 'none'; // Hide admin notice completely
-        requestAdminContainer.style.display = 'block';
-    }
-}
-
-
-
-// Function to load video history
-function loadVideoHistory() {
-    socket.emit('get video history');
-}
-
-// Socket event to receive video history
-socket.on('video history', (history) => {
-    videoHistoryContainer.innerHTML = '';
-    
-    if (history.length === 0) {
-        videoHistoryContainer.innerHTML = '<p>No video history available</p>';
-        return;
-    }
-    
-    const historyList = document.createElement('ul');
-    
-    history.forEach(video => {
-        const historyItem = document.createElement('li');
-        historyItem.className = 'history-item';
-        
-        const videoType = document.createElement('span');
-        videoType.className = 'video-type';
-        videoType.textContent = video.type.toUpperCase();
-        
-        const videoLink = document.createElement('a');
-        videoLink.href = '#';
-        videoLink.className = 'video-link';
-        videoLink.textContent = video.url.substring(0, 50) + (video.url.length > 50 ? '...' : '');
-        videoLink.addEventListener('click', (e) => {
-            e.preventDefault();
-            if (isAdmin) {
-                videoUrlInput.value = video.url;
-                socket.emit('change video', video.url);
-            } else {
-                alert('Only the admin can change videos');
-            }
-        });
-        
-        const addedBy = document.createElement('span');
-        addedBy.className = 'added-by';
-        addedBy.textContent = `Added by ${video.addedByUsername}`;
-        
-        const timestamp = document.createElement('span');
-        timestamp.className = 'timestamp';
-        timestamp.textContent = new Date(video.watchedAt).toLocaleString();
-        
-        historyItem.appendChild(videoType);
-        historyItem.appendChild(videoLink);
-        historyItem.appendChild(addedBy);
-        historyItem.appendChild(timestamp);
-        
-        historyList.appendChild(historyItem);
-    });
-    
-    videoHistoryContainer.appendChild(historyList);
-    videoHistoryContainer.style.display = 'block';
-});
-
-// Event listener for video history button
-if (videoHistoryBtn) {
-    videoHistoryBtn.addEventListener('click', () => {
-        if (videoHistoryContainer.style.display === 'none' || videoHistoryContainer.style.display === '') {
-            loadVideoHistory();
-            videoHistoryContainer.style.display = 'block';
-        } else {
-            videoHistoryContainer.style.display = 'none';
+        if (adminControls) {
+            adminControls.style.display = 'block';
         }
-    });
+        if (adminNotice) {
+            adminNotice.style.display = 'none'; // Hide admin notice when you're the admin
+        }
+        if (requestAdminContainer) {
+            requestAdminContainer.style.display = 'none';
+        }
+    } else {
+        if (adminControls) {
+            adminControls.style.display = 'none';
+        }
+        if (adminNotice) {
+            adminNotice.style.display = 'none'; // Hide admin notice completely
+        }
+        if (requestAdminContainer) {
+            requestAdminContainer.style.display = 'block';
+        }
+    }
 }
 
 // Socket event for loading chat history
@@ -1862,55 +1802,6 @@ acceptAdminRequestBtn.addEventListener('click', () => {
 
 rejectAdminRequestBtn.addEventListener('click', () => {
     adminRequestModal.style.display = 'none';
-});
-
-// System message configuration toggle event listeners
-toggleJoinLeave.addEventListener('change', () => {
-    if (isAdmin) {
-        const config = {
-            showJoinLeaveMessages: toggleJoinLeave.checked,
-            showAdminChangeMessages: systemMessageConfig.showAdminChangeMessages,
-            showVideoChangeMessages: systemMessageConfig.showVideoChangeMessages,
-            showCriticalMessages: systemMessageConfig.showCriticalMessages
-        };
-        socket.emit('update system message config', config);
-    } else {
-        // Revert the toggle if not admin
-        toggleJoinLeave.checked = systemMessageConfig.showJoinLeaveMessages;
-        showNotification('Only admin can change chat notification settings', 'error');
-    }
-});
-
-toggleAdminChange.addEventListener('change', () => {
-    if (isAdmin) {
-        const config = {
-            showJoinLeaveMessages: systemMessageConfig.showJoinLeaveMessages,
-            showAdminChangeMessages: toggleAdminChange.checked,
-            showVideoChangeMessages: systemMessageConfig.showVideoChangeMessages,
-            showCriticalMessages: systemMessageConfig.showCriticalMessages
-        };
-        socket.emit('update system message config', config);
-    } else {
-        // Revert the toggle if not admin
-        toggleAdminChange.checked = systemMessageConfig.showAdminChangeMessages;
-        showNotification('Only admin can change chat notification settings', 'error');
-    }
-});
-
-toggleVideoChange.addEventListener('change', () => {
-    if (isAdmin) {
-        const config = {
-            showJoinLeaveMessages: systemMessageConfig.showJoinLeaveMessages,
-            showAdminChangeMessages: systemMessageConfig.showAdminChangeMessages,
-            showVideoChangeMessages: toggleVideoChange.checked,
-            showCriticalMessages: systemMessageConfig.showCriticalMessages
-        };
-        socket.emit('update system message config', config);
-    } else {
-        // Revert the toggle if not admin
-        toggleVideoChange.checked = systemMessageConfig.showVideoChangeMessages;
-        showNotification('Only admin can change chat notification settings', 'error');
-    }
 });
 
 // Socket events for admin status
@@ -2074,11 +1965,13 @@ socket.on('video play', (data) => {
     });
     
     // Show visual indicator for non-admins
-    if (!isAdmin) {
+    if (!isAdmin && adminViewingNotice) {
         adminViewingNotice.textContent = "Admin started playback";
         adminViewingNotice.style.display = 'block';
         setTimeout(() => {
-            adminViewingNotice.style.display = 'none';
+            if (adminViewingNotice) {
+                adminViewingNotice.style.display = 'none';
+            }
         }, 3000);
     }
 });
@@ -2132,11 +2025,13 @@ socket.on('video pause', (data) => {
     });
     
     // Show visual indicator for non-admins
-    if (!isAdmin) {
+    if (!isAdmin && adminViewingNotice) {
         adminViewingNotice.textContent = "Admin paused playback";
         adminViewingNotice.style.display = 'block';
         setTimeout(() => {
-            adminViewingNotice.style.display = 'none';
+            if (adminViewingNotice) {
+                adminViewingNotice.style.display = 'none';
+            }
         }, 3000);
     }
 });
@@ -2320,10 +2215,31 @@ socket.on('system message config', (config) => {
     console.log('System message config updated:', config);
     systemMessageConfig = { ...systemMessageConfig, ...config };
     
-    // Update toggle states
-    toggleJoinLeave.checked = systemMessageConfig.showJoinLeaveMessages;
-    toggleAdminChange.checked = systemMessageConfig.showAdminChangeMessages;
-    toggleVideoChange.checked = systemMessageConfig.showVideoChangeMessages;
+    // Update toggle states in the main area
+    if (toggleJoinLeave) {
+        toggleJoinLeave.checked = systemMessageConfig.showJoinLeaveMessages;
+    }
+    if (toggleAdminChange) {
+        toggleAdminChange.checked = systemMessageConfig.showAdminChangeMessages;
+    }
+    if (toggleVideoChange) {
+        toggleVideoChange.checked = systemMessageConfig.showVideoChangeMessages;
+    }
+    
+    // Update modal toggle states
+    const modalToggleJoinLeave = document.getElementById('modal-toggle-join-leave');
+    const modalToggleAdminChange = document.getElementById('modal-toggle-admin-change');
+    const modalToggleVideoChange = document.getElementById('modal-toggle-video-change');
+    
+    if (modalToggleJoinLeave) {
+        modalToggleJoinLeave.checked = systemMessageConfig.showJoinLeaveMessages;
+    }
+    if (modalToggleAdminChange) {
+        modalToggleAdminChange.checked = systemMessageConfig.showAdminChangeMessages;
+    }
+    if (modalToggleVideoChange) {
+        modalToggleVideoChange.checked = systemMessageConfig.showVideoChangeMessages;
+    }
 });
 
 // Handle error messages
@@ -2332,61 +2248,116 @@ socket.on('error message', (msg) => {
     showNotification(msg, 'error');
 });
 
-// Admin play button - Fix to maintain current time
-adminPlayBtn.addEventListener('click', async () => {
-    if (isAdmin) {
-        try {
-            const currentTime = await player.getCurrentTime();
-            player.playVideo();
-            socket.emit('video play', currentTime);
-            socket.emit('admin action', 'play');
-            console.log("Admin play button clicked, current time:", currentTime);
-        } catch (e) {
-            console.error("Error in admin play:", e);
-        }
+// Handle video history response
+socket.on('video history', (history) => {
+    const container = document.getElementById('video-history');
+    if (!container) return;
+    
+    if (!history || history.length === 0) {
+        container.innerHTML = `
+            <div class="video-history-header">
+                <h3><i class="fas fa-history"></i> Video History</h3>
+                <button class="close-history-btn" onclick="toggleVideoHistory()">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div class="video-history-empty">
+                <i class="fas fa-film"></i>
+                <p>No videos have been played yet</p>
+            </div>
+        `;
+        return;
     }
+    
+    const historyHtml = history.map(video => `
+        <div class="video-history-item" onclick="changeVideoFromHistory('${video.url}')">
+            <div class="video-info">
+                <div class="video-title">${video.title || 'Untitled Video'}</div>
+                <div class="video-url">${video.url}</div>
+                <div class="video-date">${new Date(video.timestamp).toLocaleString()}</div>
+            </div>
+            <button class="replay-btn" onclick="event.stopPropagation(); changeVideoFromHistory('${video.url}')" title="Play this video">
+                <i class="fas fa-play"></i>
+            </button>
+        </div>
+    `).join('');
+    
+    container.innerHTML = `
+        <div class="video-history-header">
+            <h3><i class="fas fa-history"></i> Video History</h3>
+            <button class="close-history-btn" onclick="toggleVideoHistory()">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+        <div class="video-history-list">
+            ${historyHtml}
+        </div>
+    `;
 });
+
+// Admin play button - Fix to maintain current time
+if (adminPlayBtn) {
+    adminPlayBtn.addEventListener('click', async () => {
+        if (isAdmin) {
+            try {
+                const currentTime = await player.getCurrentTime();
+                player.playVideo();
+                socket.emit('video play', currentTime);
+                socket.emit('admin action', 'play');
+                console.log("Admin play button clicked, current time:", currentTime);
+            } catch (e) {
+                console.error("Error in admin play:", e);
+            }
+        }
+    });
+}
 
 // Admin pause button - Fix to maintain current time
-adminPauseBtn.addEventListener('click', async () => {
-    if (isAdmin) {
-        try {
-            const currentTime = await player.getCurrentTime();
-            player.pauseVideo();
-            socket.emit('video pause', currentTime);
-            socket.emit('admin action', 'pause');
-            console.log("Admin pause button clicked, current time:", currentTime);
-        } catch (e) {
-            console.error("Error in admin pause:", e);
+if (adminPauseBtn) {
+    adminPauseBtn.addEventListener('click', async () => {
+        if (isAdmin) {
+            try {
+                const currentTime = await player.getCurrentTime();
+                player.pauseVideo();
+                socket.emit('video pause', currentTime);
+                socket.emit('admin action', 'pause');
+                console.log("Admin pause button clicked, current time:", currentTime);
+            } catch (e) {
+                console.error("Error in admin pause:", e);
+            }
         }
-    }
-});
+    });
+}
 
 // Admin restart button
-adminRestartBtn.addEventListener('click', () => {
-    if (isAdmin) {
-        try {
-            player.seekTo(0);
-            setTimeout(() => {
-                player.playVideo();
-            }, 500);
-            socket.emit('video seek', 0);
-            socket.emit('video play', 0);
-            socket.emit('admin action', 'restart');
-            console.log("Admin restart button clicked");
-        } catch (e) {
-            console.error("Error in admin restart:", e);
+if (adminRestartBtn) {
+    adminRestartBtn.addEventListener('click', () => {
+        if (isAdmin) {
+            try {
+                player.seekTo(0);
+                setTimeout(() => {
+                    player.playVideo();
+                }, 500);
+                socket.emit('video seek', 0);
+                socket.emit('video play', 0);
+                socket.emit('admin action', 'restart');
+                console.log("Admin restart button clicked");
+            } catch (e) {
+                console.error("Error in admin restart:", e);
+            }
         }
-    }
-});
+    });
+}
 
 // Listen for admin actions for visual cues
 socket.on('admin action', (action) => {
-    if (!isAdmin) {
+    if (!isAdmin && adminViewingNotice) {
         adminViewingNotice.textContent = `Admin ${action}ed the video`;
         adminViewingNotice.style.display = 'block';
         setTimeout(() => {
-            adminViewingNotice.style.display = 'none';
+            if (adminViewingNotice) {
+                adminViewingNotice.style.display = 'none';
+            }
         }, 3000);
     }
 });
@@ -2888,11 +2859,23 @@ function updateOnlineUsersCount(count) {
 // Handle user count updates
 socket.on('user count', (count) => {
     updateOnlineUsersCount(count);
+    
+    // Update room settings modal if it's open
+    const connectedUsersCount = document.getElementById('connected-users-count');
+    if (connectedUsersCount) {
+        connectedUsersCount.textContent = count;
+    }
 });
 
 // Handle user list updates  
 socket.on('user list', (users) => {
     updateOnlineUsersCount(users.length);
+    
+    // Update room settings modal if it's open
+    const connectedUsersCount = document.getElementById('connected-users-count');
+    if (connectedUsersCount) {
+        connectedUsersCount.textContent = users.length;
+    }
     
     // You could also update a user list display here
     console.log('Users online:', users);
@@ -3215,6 +3198,15 @@ function initializeUI() {
             logout();
         }
     });
+    
+    // Initialize header button functionality
+    initializeHeaderButtons();
+    
+    // Initialize invite system
+    initializeInviteSystem();
+    
+    // Initialize room settings modal
+    initializeRoomSettingsModal();
 }
 
 function showNotification(message, type = 'info') {
@@ -3369,6 +3361,73 @@ function initializeInviteSystem() {
     }
 }
 
+function initializeHeaderButtons() {
+    // Room Settings Button
+    const roomSettingsBtn = document.getElementById('room-settings');
+    if (roomSettingsBtn) {
+        roomSettingsBtn.addEventListener('click', openRoomSettingsModal);
+    }
+    
+    // Video History Button
+    const videoHistoryBtn = document.getElementById('video-history-btn');
+    if (videoHistoryBtn) {
+        videoHistoryBtn.addEventListener('click', toggleVideoHistory);
+    }
+    
+    // Exit Room Button
+    const exitRoomBtn = document.getElementById('exit-room-btn');
+    if (exitRoomBtn) {
+        exitRoomBtn.addEventListener('click', exitRoom);
+    }
+}
+
+function initializeRoomSettingsModal() {
+    // Close button handlers
+    const closeBtn = document.getElementById('close-room-settings-modal');
+    const closeBtn2 = document.getElementById('close-room-settings-btn');
+    
+    if (closeBtn) {
+        closeBtn.addEventListener('click', closeRoomSettingsModal);
+    }
+    
+    if (closeBtn2) {
+        closeBtn2.addEventListener('click', closeRoomSettingsModal);
+    }
+    
+    // Modal background click to close
+    const modal = document.getElementById('room-settings-modal');
+    if (modal) {
+        modal.addEventListener('click', (e) => {
+            if (e.target === modal) {
+                closeRoomSettingsModal();
+            }
+        });
+    }
+    
+    // System message toggles
+    const toggleJoinLeave = document.getElementById('modal-toggle-join-leave');
+    const toggleAdminChange = document.getElementById('modal-toggle-admin-change');
+    const toggleVideoChange = document.getElementById('modal-toggle-video-change');
+    
+    if (toggleJoinLeave) {
+        toggleJoinLeave.addEventListener('change', (e) => {
+            updateSystemMessageSetting('showJoinLeaveMessages', e.target.checked);
+        });
+    }
+    
+    if (toggleAdminChange) {
+        toggleAdminChange.addEventListener('change', (e) => {
+            updateSystemMessageSetting('showAdminChangeMessages', e.target.checked);
+        });
+    }
+    
+    if (toggleVideoChange) {
+        toggleVideoChange.addEventListener('change', (e) => {
+            updateSystemMessageSetting('showVideoChangeMessages', e.target.checked);
+        });
+    }
+}
+
 function openInviteModal() {
     if (!isAdmin) {
         showNotification('Only room admin can invite users', 'error');
@@ -3383,6 +3442,126 @@ function openInviteModal() {
 
 function closeInviteModalHandler() {
     inviteModal.style.display = 'none';
+}
+
+function openRoomSettingsModal() {
+    const modal = document.getElementById('room-settings-modal');
+    if (modal) {
+        modal.style.display = 'flex';
+        updateRoomSettings();
+    }
+}
+
+function closeRoomSettingsModal() {
+    const modal = document.getElementById('room-settings-modal');
+    if (modal) {
+        modal.style.display = 'none';
+    }
+}
+
+function updateRoomSettings() {
+    const roomCodeDisplay = document.getElementById('room-code-display');
+    if (roomCodeDisplay) {
+        const roomId = extractRoomIdFromURL() || 'default';
+        roomCodeDisplay.textContent = roomId.toUpperCase();
+    }
+    
+    const adminDisplay = document.getElementById('current-admin-display');
+    if (adminDisplay) {
+        adminDisplay.textContent = currentAdminUser || 'None';
+    }
+    
+    socket.emit('get user count');
+}
+
+function updateSystemMessageSetting(setting, value) {
+    if (!isAdmin) {
+        showNotification('Only room admin can change these settings', 'error');
+        return;
+    }
+    
+    systemMessageConfig[setting] = value;
+    socket.emit('update system message config', systemMessageConfig);
+    showNotification('Setting updated', 'success');
+}
+
+function toggleVideoHistory() {
+    const container = document.getElementById('video-history');
+    if (!container) return;
+    
+    if (container.style.display === 'none' || !container.style.display) {
+        container.style.display = 'block';
+        loadVideoHistory();
+        
+        const btn = document.getElementById('video-history-btn');
+        if (btn) {
+            btn.classList.add('active');
+            btn.title = 'Hide Video History';
+        }
+    } else {
+        container.style.display = 'none';
+        
+        const btn = document.getElementById('video-history-btn');
+        if (btn) {
+            btn.classList.remove('active');
+            btn.title = 'Video History';
+        }
+    }
+}
+
+function loadVideoHistory() {
+    const container = document.getElementById('video-history');
+    if (!container) return;
+    
+    container.innerHTML = `
+        <div class="video-history-header">
+            <h3><i class="fas fa-history"></i> Video History</h3>
+            <button class="close-history-btn" onclick="toggleVideoHistory()">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+        <div class="video-history-loading">
+            <i class="fas fa-spinner fa-spin"></i>
+            Loading history...
+        </div>
+    `;
+    
+    socket.emit('get video history');
+}
+
+function exitRoom() {
+    if (confirm('Are you sure you want to leave this room?')) {
+        if (socket) {
+            socket.disconnect();
+        }
+        
+        if (syncInterval) {
+            clearInterval(syncInterval);
+        }
+        
+        window.location.href = '/home.html';
+    }
+}
+
+function changeVideoFromHistory(url) {
+    if (!isAdmin) {
+        showNotification('Only admin can change the video', 'error');
+        return;
+    }
+    
+    const videoUrlInput = document.getElementById('video-url');
+    if (videoUrlInput) {
+        videoUrlInput.value = url;
+        
+        // Trigger the change video functionality
+        const changeVideoBtn = document.getElementById('change-video');
+        if (changeVideoBtn) {
+            changeVideoBtn.click();
+        }
+    }
+    
+    // Close video history
+    toggleVideoHistory();
 }
 
 function resetInviteModal() {
