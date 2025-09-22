@@ -3583,6 +3583,13 @@ function resetInviteModal() {
     if (copyInviteLinkBtn) if (copyInviteLinkBtn) copyInviteLinkBtn.disabled = true;
     if (revokeInviteBtn) if (revokeInviteBtn) revokeInviteBtn.style.display = 'none';
     if (inviteStats) if (inviteStats) inviteStats.style.display = 'none';
+    
+
+    // Hide share options
+
+    const shareOptions = document.querySelector('.share-options');
+
+    if (shareOptions) shareOptions.style.display = 'none';
     if (generateInviteBtn) {
         if (generateInviteBtn) generateInviteBtn.style.display = 'block';
         if (generateInviteBtn) generateInviteBtn.disabled = false;
@@ -3638,6 +3645,13 @@ async function generateInviteLink() {
             if (inviteExpires) inviteExpires.textContent = new Date(result.expiresAt).toLocaleDateString();
             if (inviteStatus) inviteStatus.textContent = 'Active';
             if (inviteStats) inviteStats.style.display = 'flex';
+            
+
+            // Show share options
+
+            const shareOptions = document.querySelector('.share-options');
+
+            if (shareOptions) shareOptions.style.display = 'block';
             
             showNotification('Invite link generated successfully!', 'success');
         } else {
@@ -3714,7 +3728,25 @@ async function copyInviteLink() {
         showNotification('Invite link copied to clipboard!', 'success');
     } catch (error) {
         showNotification('Failed to copy link. Please try again.', 'error');
+}
+
+
+
+// Share functions for invite modal
+
+function shareViaWhatsApp() {
+    const link = currentInviteUrl;
+    if (!link) {
+        showNotification('No invite link to share', 'error');
+        return;
     }
+    const url = `https://wa.me/?text=${encodeURIComponent('Join me for a watch party! ' + link)}`;
+    window.open(url, '_blank');
+}
+
+    const url = `https://wa.me/?text=${encodeURIComponent('Join me for a watch party! ' + link)}`;
+
+    window.open(url, '_blank');
 }
 
 // Function to update video container state

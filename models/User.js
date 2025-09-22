@@ -42,6 +42,15 @@ const userSchema = new mongoose.Schema({
     type: String,
     default: ''
   },
+  recentRooms: [{
+    roomCode: String,
+    name: String,
+    description: String,
+    joinedAt: {
+      type: Date,
+      default: Date.now
+    }
+  }],
   preferences: {
     theme: {
       type: String,

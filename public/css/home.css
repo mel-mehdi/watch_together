@@ -72,6 +72,14 @@
     transform: translateY(-1px);
 }
 
+.logout-btn {
+    background: var(--error-color, #e74c3c) !important;
+}
+
+.logout-btn:hover {
+    background: var(--error-dark, #c0392b) !important;
+}
+
 /* Hero Section */
 .hero {
     padding: 8rem 0 4rem;

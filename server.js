@@ -37,7 +37,6 @@ const VideoHistory = require('./models/VideoHistory');
 // Import routes
 const authRoutes = require('./routes/auth');
 const roomRoutes = require('./routes/rooms');
-const adminRoutes = require('./routes/admin');
 
 const app = express();
 const server = http.createServer(app);
@@ -48,7 +47,8 @@ const io = new Server(server, {
     }
 });
 
-// Middleware
+const adminRoutes = require('./routes/admin')(io);
+
 app.use(express.json());
 
 // Debug middleware to log all requests
@@ -215,7 +215,7 @@ io.on('connection', async (socket) => {
     // Handle joining a specific room
     socket.on('join room', async ({ roomId, username }) => {
         try {
-            // Find the room in the database - handle both room codes and ObjectIds
+            // Find the room in the database - handle both room codes and ObjectId
             let room;
             if (roomId.length === 8) {
                 // It's a room code

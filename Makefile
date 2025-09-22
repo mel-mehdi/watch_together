@@ -4,7 +4,7 @@
 
 # Default target - install and start
 all:
-	npm start
+	@npm start
 
 # Install dependencies
 install:
