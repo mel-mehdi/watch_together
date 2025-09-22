@@ -3429,12 +3429,14 @@ function initializeRoomSettingsModal() {
 }
 
 function openInviteModal() {
+    console.log("Opening invite modal");
     if (!isAdmin) {
         showNotification('Only room admin can invite users', 'error');
         return;
     }
     
     inviteModal.style.display = 'flex';
+    console.log("Invite modal display set to flex");
     
     // Reset modal state
     resetInviteModal();
@@ -3445,9 +3447,11 @@ function closeInviteModalHandler() {
 }
 
 function openRoomSettingsModal() {
+    console.log("Opening room settings modal");
     const modal = document.getElementById('room-settings-modal');
     if (modal) {
         modal.style.display = 'flex';
+    console.log("Modal display set to flex");
         updateRoomSettings();
     }
 }
@@ -3486,6 +3490,7 @@ function updateSystemMessageSetting(setting, value) {
 }
 
 function toggleVideoHistory() {
+    console.log("Toggling video history");
     const container = document.getElementById('video-history');
     if (!container) return;
     
@@ -3530,6 +3535,7 @@ function loadVideoHistory() {
 }
 
 function exitRoom() {
+    console.log("Exiting room");
     if (confirm('Are you sure you want to leave this room?')) {
         if (socket) {
             socket.disconnect();
@@ -3565,12 +3571,31 @@ function changeVideoFromHistory(url) {
 }
 
 function resetInviteModal() {
-    inviteLinkInput.value = '';
-    copyInviteLinkBtn.disabled = true;
-    revokeInviteBtn.style.display = 'none';
-    inviteStats.style.display = 'none';
-    generateInviteBtn.style.display = 'block';
-    generateInviteBtn.disabled = false;
+    // Hide the link container and show generate button
+    const inviteLinkContainer = document.querySelector('.invite-link-container');
+    const generateInviteContainer = document.querySelector('.generate-invite-container');
+    
+    if (inviteLinkContainer) inviteLinkContainer.style.display = 'none';
+    if (generateInviteContainer) generateInviteContainer.style.display = 'block';
+    
+    // Reset link input and buttons with null checks
+    if (inviteLinkInput) if (inviteLinkInput) inviteLinkInput.value = '';
+    if (copyInviteLinkBtn) if (copyInviteLinkBtn) copyInviteLinkBtn.disabled = true;
+    if (revokeInviteBtn) if (revokeInviteBtn) revokeInviteBtn.style.display = 'none';
+    if (inviteStats) if (inviteStats) inviteStats.style.display = 'none';
+    if (generateInviteBtn) {
+        if (generateInviteBtn) generateInviteBtn.style.display = 'block';
+        if (generateInviteBtn) generateInviteBtn.disabled = false;
+    }
+}
+
+function oldResetInviteModal() {
+    if (inviteLinkInput) inviteLinkInput.value = '';
+    if (copyInviteLinkBtn) copyInviteLinkBtn.disabled = true;
+    if (revokeInviteBtn) revokeInviteBtn.style.display = 'none';
+    if (inviteStats) inviteStats.style.display = 'none';
+    if (generateInviteBtn) generateInviteBtn.style.display = 'block';
+    if (generateInviteBtn) generateInviteBtn.disabled = false;
 }
 
 async function generateInviteLink() {
@@ -3598,15 +3623,21 @@ async function generateInviteLink() {
             currentInviteUrl = result.inviteUrl;
             
             // Update UI
-            inviteLinkInput.value = currentInviteUrl;
-            copyInviteLinkBtn.disabled = false;
-            revokeInviteBtn.style.display = 'block';
-            generateInviteBtn.style.display = 'none';
+            const inviteLinkContainer = document.querySelector('.invite-link-container');
+            const generateInviteContainer = document.querySelector('.generate-invite-container');
+            if (inviteLinkContainer) inviteLinkContainer.style.display = 'block';
+            if (generateInviteContainer) generateInviteContainer.style.display = 'none';
+            
+            // Update link and buttons
+            if (inviteLinkInput) inviteLinkInput.value = currentInviteUrl;
+            if (copyInviteLinkBtn) copyInviteLinkBtn.disabled = false;
+            if (revokeInviteBtn) revokeInviteBtn.style.display = 'block';
+            if (generateInviteBtn) generateInviteBtn.style.display = 'none';
             
             // Update stats
-            inviteExpires.textContent = new Date(result.expiresAt).toLocaleDateString();
-            inviteStatus.textContent = 'Active';
-            inviteStats.style.display = 'flex';
+            if (inviteExpires) inviteExpires.textContent = new Date(result.expiresAt).toLocaleDateString();
+            if (inviteStatus) inviteStatus.textContent = 'Active';
+            if (inviteStats) inviteStats.style.display = 'flex';
             
             showNotification('Invite link generated successfully!', 'success');
         } else {
@@ -3615,8 +3646,8 @@ async function generateInviteLink() {
     } catch (error) {
         showNotification('Network error. Please try again.', 'error');
     } finally {
-        generateInviteBtn.disabled = false;
-        generateInviteBtn.innerHTML = '<i class="fas fa-link"></i> Generate Invite Link';
+        if (generateInviteBtn) generateInviteBtn.disabled = false;
+        if (generateInviteBtn) generateInviteBtn.innerHTML = '<i class="fas fa-link"></i> Generate Invite Link';
     }
 }
 
@@ -3657,8 +3688,8 @@ async function revokeInviteLink() {
     } catch (error) {
         showNotification('Network error. Please try again.', 'error');
     } finally {
-        revokeInviteBtn.disabled = false;
-        revokeInviteBtn.innerHTML = '<i class="fas fa-times-circle"></i> Revoke Link';
+        if (revokeInviteBtn) revokeInviteBtn.disabled = false;
+        if (revokeInviteBtn) revokeInviteBtn.innerHTML = '<i class="fas fa-times-circle"></i> Revoke Link';
     }
 }
 

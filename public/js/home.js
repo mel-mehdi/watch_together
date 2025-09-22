@@ -59,6 +59,7 @@ class WatchTogetherHome {
         this.loadingText = document.getElementById('loading-text');
         this.recentRoomsSection = document.getElementById('recent-rooms');
         this.roomsGrid = document.getElementById('rooms-grid');
+        this.loginBtn = document.querySelector('.login-btn');
         
         // Current room data
         this.currentRoomData = null;
@@ -127,6 +128,7 @@ class WatchTogetherHome {
         this.socket.on('room error', (error) => this.onRoomError(error));
         this.socket.on('room info', (info) => this.onRoomInfo(info));
         this.socket.on('recent rooms', (rooms) => this.displayRecentRooms(rooms));
+        this.socket.on('room deleted', (data) => this.onRoomDeleted(data));
     }
 
     checkAuthentication() {
@@ -150,11 +152,36 @@ class WatchTogetherHome {
             this.currentUser = null;
             console.log('User is not authenticated');
         }
+
+        // Update UI based on authentication status
+        this.updateAuthUI();
     }
 
     setupAuthenticatedUser() {
         // This will be called when forms are shown
         // Store the authenticated username for use in forms
+    }
+
+    updateAuthUI() {
+        if (this.loginBtn) {
+            if (this.currentUser) {
+                // User is logged in - change to logout button
+                this.loginBtn.textContent = 'Logout';
+                this.loginBtn.href = '#';
+                this.loginBtn.classList.add('logout-btn');
+                this.loginBtn.removeEventListener('click', this.handleLoginClick);
+                this.loginBtn.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    this.logout();
+                });
+            } else {
+                // User is not logged in - show login button
+                this.loginBtn.textContent = 'Login';
+                this.loginBtn.href = '/login.html';
+                this.loginBtn.classList.remove('logout-btn');
+                this.loginBtn.removeEventListener('click', this.logout);
+            }
+        }
     }
 
     showCreateRoomModal() {
@@ -420,15 +447,47 @@ class WatchTogetherHome {
         }
     }
 
-    loadRecentRooms() {
-        // Load recent rooms from localStorage or server
-        const recentRooms = JSON.parse(localStorage.getItem('recentRooms') || '[]');
+    async loadRecentRooms() {
+        // Load recent rooms from localStorage
+        let recentRooms = JSON.parse(localStorage.getItem('recentRooms') || '[]');
+        
+        // Validate rooms with server (remove deleted ones)
+        if (recentRooms.length > 0) {
+            recentRooms = await this.validateRecentRooms(recentRooms);
+            // Update localStorage with validated rooms
+            localStorage.setItem('recentRooms', JSON.stringify(recentRooms));
+        }
+        
         if (recentRooms.length > 0) {
             this.displayRecentRooms(recentRooms);
+        } else {
+            this.recentRoomsSection.style.display = 'none';
         }
         
         // Also request from server if user is logged in
-        this.socket.emit('get recent rooms');
+        if (this.currentUser) {
+            this.socket.emit('get recent rooms');
+        }
+    }
+
+    async validateRecentRooms(rooms) {
+        const validatedRooms = [];
+        
+        for (const room of rooms) {
+            try {
+                const response = await fetch(`/api/rooms/info/${room.roomCode}`);
+                const result = await response.json();
+                if (result.success) {
+                    validatedRooms.push(room);
+                }
+            } catch (error) {
+                console.error('Error validating room:', room.roomCode, error);
+                // Keep the room if we can't validate (network error)
+                validatedRooms.push(room);
+            }
+        }
+        
+        return validatedRooms;
     }
 
     displayRecentRooms(rooms) {
@@ -532,6 +591,16 @@ class WatchTogetherHome {
         }
     }
 
+    onRoomDeleted(data) {
+        this.showNotification('Room has been deleted', 'error');
+        
+        // Remove from recent rooms if it was there
+        this.removeRecentRoom(data.roomCode);
+        
+        // Optionally, you can also refresh the recent rooms list from the server
+        this.loadRecentRooms();
+    }
+
     saveToRecentRooms(room) {
         let recentRooms = JSON.parse(localStorage.getItem('recentRooms') || '[]');
         
@@ -566,6 +635,15 @@ class WatchTogetherHome {
         
         // Keep only last 5
         recentRooms = recentRooms.slice(0, 5);
+        
+        localStorage.setItem('recentRooms', JSON.stringify(recentRooms));
+    }
+
+    removeRecentRoom(roomCode) {
+        let recentRooms = JSON.parse(localStorage.getItem('recentRooms') || '[]');
+        
+        // Remove the room with the given code
+        recentRooms = recentRooms.filter(r => r.roomCode !== roomCode);
         
         localStorage.setItem('recentRooms', JSON.stringify(recentRooms));
     }
@@ -683,6 +761,26 @@ class WatchTogetherHome {
         
         const mailtoUrl = `mailto:?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
         window.location.href = mailtoUrl;
+    }
+
+    logout() {
+        // Clear authentication data
+        localStorage.removeItem('authToken');
+        localStorage.removeItem('userData');
+        
+        // Reset current user
+        this.currentUser = null;
+        
+        // Update UI
+        this.updateAuthUI();
+        
+        // Show notification
+        this.showNotification('Logged out successfully', 'success');
+        
+        // Optionally refresh the page to reset all states
+        setTimeout(() => {
+            window.location.reload();
+        }, 1000);
     }
 }
 
