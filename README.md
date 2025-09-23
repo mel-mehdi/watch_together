@@ -153,6 +153,11 @@ EMAIL_PORT=587
 EMAIL_USER=your-email@gmail.com
 EMAIL_PASS=your-app-password
 
+# Google OAuth (Optional)
+GOOGLE_CLIENT_ID=your-google-client-id
+GOOGLE_CLIENT_SECRET=your-google-client-secret
+GOOGLE_CALLBACK_URL=http://localhost:3000/api/auth/google/callback
+
 # Application Settings
 DEFAULT_ROOM=default
 MAX_USERS_PER_ROOM=50
@@ -298,6 +303,50 @@ docker logs watch-together-mongo
 # Health check
 make health-check
 ```
+
+## Google OAuth Setup (Optional)
+
+To enable Google sign-in and Gmail-based password reset:
+
+### 1. Create Google OAuth Credentials
+
+1. Go to [Google Cloud Console](https://console.cloud.google.com/)
+2. Create a new project or select existing one
+3. Enable the Google+ API
+4. Go to "Credentials" → "Create Credentials" → "OAuth 2.0 Client IDs"
+5. Set application type to "Web application"
+6. Add authorized redirect URIs:
+   - `http://localhost:3000/api/auth/google/callback` (development)
+   - `https://yourdomain.com/api/auth/google/callback` (production)
+7. Copy Client ID and Client Secret
+
+### 2. Configure Gmail SMTP (for password reset)
+
+1. Enable 2-Factor Authentication on your Gmail account
+2. Generate an App Password: [Google App Passwords](https://support.google.com/accounts/answer/185833)
+3. Use your Gmail address and App Password in `.env`
+
+### 3. Update Environment Variables
+
+```env
+# Google OAuth
+GOOGLE_CLIENT_ID=your-google-client-id
+GOOGLE_CLIENT_SECRET=your-google-client-secret
+GOOGLE_CALLBACK_URL=http://localhost:3000/api/auth/google/callback
+
+# Gmail SMTP
+EMAIL_HOST=smtp.gmail.com
+EMAIL_USER=your-email@gmail.com
+EMAIL_PASS=your-app-password
+```
+
+### 4. Restart the Application
+
+```bash
+make restart
+```
+
+Users can now sign in with Google and receive password reset emails via Gmail.
 
 ## Contributing
 

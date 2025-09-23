@@ -5,6 +5,9 @@ const dotenv = require('dotenv');
 const session = require('express-session');
 const MongoStore = require('connect-mongo');
 const connectDB = require('./config/db');
+const passport = require('passport');
+const GoogleStrategy = require('passport-google-oauth20').Strategy;
+const cors = require('cors');
 
 // Load environment variables
 dotenv.config();
@@ -51,6 +54,12 @@ const adminRoutes = require('./routes/admin')(io);
 
 app.use(express.json());
 
+// Enable CORS for all routes
+app.use(cors({
+    origin: true, // Allow all origins in development
+    credentials: true
+}));
+
 // Debug middleware to log all requests
 app.use((req, res, next) => {
     console.log(`🔍 Request: ${req.method} ${req.url}`);
@@ -58,51 +67,195 @@ app.use((req, res, next) => {
 });
 
 // Session configuration
-if (isDatabaseConnected) {
-    app.use(session({
-        secret: process.env.SESSION_SECRET || 'fallback-session-secret',
-        resave: false,
-        saveUninitialized: false,
-        store: MongoStore.create({
-            mongoUrl: process.env.MONGO_URI
-        }),
-        cookie: {
-            secure: false, // Set to true if using HTTPS
-            httpOnly: true,
-            maxAge: 1000 * 60 * 60 * 24 * 7 // 7 days
+app.use(session({
+    secret: process.env.SESSION_SECRET || 'fallback-session-secret',
+    resave: false,
+    saveUninitialized: false,
+    store: isDatabaseConnected ? MongoStore.create({
+        mongoUrl: process.env.MONGO_URI
+    }) : undefined, // Use memory store if no database
+    cookie: {
+        secure: false, // Set to true if using HTTPS
+        httpOnly: true,
+        maxAge: 1000 * 60 * 60 * 24 * 7 // 7 days
+    }
+}));
+
+// Passport configuration
+app.use(passport.initialize());
+app.use(passport.session());
+
+// Google OAuth Strategy - only configure if credentials are properly set
+if (process.env.GOOGLE_CLIENT_ID && 
+    process.env.GOOGLE_CLIENT_SECRET && 
+    process.env.GOOGLE_CLIENT_ID !== 'your-google-client-id' && 
+    process.env.GOOGLE_CLIENT_SECRET !== 'your-google-client-secret') {
+    
+    passport.use(new GoogleStrategy({
+        clientID: process.env.GOOGLE_CLIENT_ID,
+        clientSecret: process.env.GOOGLE_CLIENT_SECRET,
+        callbackURL: process.env.GOOGLE_CALLBACK_URL || '/api/auth/google/callback'
+      },
+      async (accessToken, refreshToken, profile, done) => {
+        try {
+          console.log('Google OAuth profile received:', profile.id, profile.emails[0]?.value, profile.displayName);
+          
+          // Check if user already exists with this Google ID
+          let user = await User.findOne({ googleId: profile.id });
+          
+          if (user) {
+            console.log('Existing Google user found:', user.username);
+            return done(null, user);
+          }
+          
+          // Check if user exists with same email
+          user = await User.findOne({ email: profile.emails[0].value });
+          
+          if (user) {
+            // Link Google account to existing user
+            console.log('Linking Google account to existing user:', user.username);
+            user.googleId = profile.id;
+            user.provider = 'google';
+            await user.save();
+            return done(null, user);
+          }
+          
+          // Create new user
+          const username = profile.displayName.replace(/\s+/g, '').toLowerCase() + Math.floor(Math.random() * 1000);
+          console.log('Creating new user from Google OAuth:', username, profile.emails[0].value);
+          
+          user = new User({
+            username: username,
+            email: profile.emails[0].value,
+            googleId: profile.id,
+            provider: 'google',
+            avatar: profile.photos[0]?.value
+          });
+          
+          await user.save();
+          console.log('New Google user created successfully:', user.username);
+          return done(null, user);
+        } catch (error) {
+          console.error('Google OAuth strategy error:', error);
+          return done(error, null);
         }
-    }));
+      }
+    ));
+    
+    passport.serializeUser((user, done) => {
+      done(null, user.id);
+    });
+
+    passport.deserializeUser(async (id, done) => {
+      try {
+        const user = await User.findById(id);
+        done(null, user);
+      } catch (error) {
+        done(error, null);
+      }
+    });
+} else {
+    console.log('Google OAuth strategy not configured - using placeholder credentials or missing configuration');
 }
 
-// Routes
-app.use('/api/auth', authRoutes);
-app.use('/api/rooms', roomRoutes);
-app.use('/api/admin', adminRoutes);
-
-// Serve admin page (protected route)
-app.get('/admin', (req, res) => {
-    res.sendFile(__dirname + '/public/admin.html');
+// Debug middleware to log all requests
+app.use((req, res, next) => {
+    console.log(`🔍 Request: ${req.method} ${req.url}`);
+    next();
 });
 
-// Serve home page as the default landing page
-app.get('/', (req, res) => {
-    res.sendFile(__dirname + '/public/home.html');
-});
+// Session configuration
+app.use(session({
+    secret: process.env.SESSION_SECRET || 'fallback-session-secret',
+    resave: false,
+    saveUninitialized: false,
+    store: isDatabaseConnected ? MongoStore.create({
+        mongoUrl: process.env.MONGO_URI
+    }) : undefined, // Use memory store if no database
+    cookie: {
+        secure: false, // Set to true if using HTTPS
+        httpOnly: true,
+        maxAge: 1000 * 60 * 60 * 24 * 7 // 7 days
+    }
+}));
 
-// Serve join page for invite links
-app.get('/join', (req, res) => {
-    res.sendFile(__dirname + '/public/join.html');
-});
+// Passport configuration
+app.use(passport.initialize());
+app.use(passport.session());
 
-// Serve room page for specific room IDs
-app.get('/room/:roomId', (req, res) => {
-    res.sendFile(__dirname + '/public/index.html');
-});
+// Google OAuth Strategy - only configure if credentials are properly set
+if (process.env.GOOGLE_CLIENT_ID && 
+    process.env.GOOGLE_CLIENT_SECRET && 
+    process.env.GOOGLE_CLIENT_ID !== 'your-google-client-id' && 
+    process.env.GOOGLE_CLIENT_SECRET !== 'your-google-client-secret') {
+    
+    passport.use(new GoogleStrategy({
+        clientID: process.env.GOOGLE_CLIENT_ID,
+        clientSecret: process.env.GOOGLE_CLIENT_SECRET,
+        callbackURL: process.env.GOOGLE_CALLBACK_URL || '/api/auth/google/callback'
+      },
+      async (accessToken, refreshToken, profile, done) => {
+        try {
+          console.log('Google OAuth profile received:', profile.id, profile.emails[0]?.value, profile.displayName);
+          
+          // Check if user already exists with this Google ID
+          let user = await User.findOne({ googleId: profile.id });
+          
+          if (user) {
+            console.log('Existing Google user found:', user.username);
+            return done(null, user);
+          }
+          
+          // Check if user exists with same email
+          user = await User.findOne({ email: profile.emails[0].value });
+          
+          if (user) {
+            // Link Google account to existing user
+            console.log('Linking Google account to existing user:', user.username);
+            user.googleId = profile.id;
+            user.provider = 'google';
+            await user.save();
+            return done(null, user);
+          }
+          
+          // Create new user
+          const username = profile.displayName.replace(/\s+/g, '').toLowerCase() + Math.floor(Math.random() * 1000);
+          console.log('Creating new user from Google OAuth:', username, profile.emails[0].value);
+          
+          user = new User({
+            username: username,
+            email: profile.emails[0].value,
+            googleId: profile.id,
+            provider: 'google',
+            avatar: profile.photos[0]?.value
+          });
+          
+          await user.save();
+          console.log('New Google user created successfully:', user.username);
+          return done(null, user);
+        } catch (error) {
+          console.error('Google OAuth strategy error:', error);
+          return done(error, null);
+        }
+      }
+    ));
+    
+    passport.serializeUser((user, done) => {
+      done(null, user.id);
+    });
 
-// Static file serving (after specific routes)
-app.use(express.static('public'));
+    passport.deserializeUser(async (id, done) => {
+      try {
+        const user = await User.findById(id);
+        done(null, user);
+      } catch (error) {
+        done(error, null);
+      }
+    });
+} else {
+    console.log('Google OAuth strategy not configured - using placeholder credentials or missing configuration');
+}
 
-// Store connected users with enhanced user data
 const users = {};
 // Store room-specific data for each socket connection
 const socketRooms = new Map(); // socketId -> roomId
@@ -119,8 +272,8 @@ function getDefaultSystemMessageConfig() {
     return {
         showJoinLeaveMessages: false,
         showAdminChangeMessages: false,
-        showVideoChangeMessages: true,
-        showCriticalMessages: true
+        showVideoChangeMessages: false,
+        showCriticalMessages: false
     };
 }
 
@@ -348,7 +501,7 @@ io.on('connection', async (socket) => {
         const messageData = {
             username: user.username,
             message: sanitizedMessage,
-            timestamp: new Date().toLocaleTimeString(),
+            timestamp: new Date().toISOString(),
             isAdmin: user.isAdmin
         };
         
@@ -577,6 +730,39 @@ io.on('connection', async (socket) => {
         }
     });
 
+    // Handle get video history request
+    socket.on('get video history', async () => {
+        const user = users[socket.id];
+        if (!user) {
+            socket.emit('error message', 'Please join a room first');
+            return;
+        }
+
+        try {
+            if (isDatabaseConnected) {
+                const history = await VideoHistory.find({ roomId: user.roomId })
+                    .sort({ watchedAt: -1 })
+                    .limit(20)
+                    .select('url type addedByUsername watchedAt');
+                
+                const formattedHistory = history.map(item => ({
+                    url: item.url,
+                    type: item.type,
+                    changedBy: item.addedByUsername,
+                    timestamp: item.watchedAt
+                }));
+                
+                socket.emit('video history', formattedHistory);
+            } else {
+                // If database is not connected, return empty history
+                socket.emit('video history', []);
+            }
+        } catch (error) {
+            console.error('Error fetching video history:', error);
+            socket.emit('video history', []);
+        }
+    });
+
     // Handle request to become admin
     socket.on('request admin', () => {
         const user = users[socket.id];
@@ -778,6 +964,33 @@ io.on('connection', async (socket) => {
         };
         socket.emit('admin stats update', stats);
     });
+});
+
+// Serve static files from public directory
+app.use(express.static('public'));
+
+// Mount routes
+app.use('/api/auth', authRoutes);
+app.use('/api/rooms', roomRoutes);
+app.use('/api/admin', adminRoutes);
+
+// Root route - serve the home page or redirect to login
+app.get('/', (req, res) => {
+    if (req.isAuthenticated()) {
+        res.sendFile(__dirname + '/public/home.html');
+    } else {
+        res.sendFile(__dirname + '/public/index.html');
+    }
+});
+
+// Join room page
+app.get('/join', (req, res) => {
+    res.sendFile(__dirname + '/public/join.html');
+});
+
+// Room page - serve the main app for room access
+app.get('/room/:code', (req, res) => {
+    res.sendFile(__dirname + '/public/index.html');
 });
 
 // Health check endpoint for Docker

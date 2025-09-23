@@ -94,6 +94,15 @@
                         <i class="fas fa-sign-in-alt"></i>
                         Sign In
                     </button>
+                    
+                    <div class="divider">
+                        <span>or</span>
+                    </div>
+                    
+                    <button type="button" class="google-button" onclick="signInWithGoogle()">
+                        <i class="fab fa-google"></i>
+                        Sign in with Google
+                    </button>
                 </form>
 
                 <!-- Register Form -->
@@ -139,11 +148,11 @@
                         </a>
                     </div>
                 </form>
-
+<!-- 
                 <button type="button" class="guest-button" onclick="continueAsGuest()">
                     <i class="fas fa-user-secret"></i>
                     Continue as Guest
-                </button>
+                </button> -->
 
                 <div class="auth-links">
                     <a href="/reset-password.html">Forgot Password?</a> • 
@@ -154,6 +163,18 @@
     </div>
 
     <script>
+        // Check for URL parameters for error messages
+        window.addEventListener('DOMContentLoaded', () => {
+            const urlParams = new URLSearchParams(window.location.search);
+            const error = urlParams.get('error');
+            
+            if (error === 'google_not_configured') {
+                showError('Google Sign-In is not configured on this server. Please use email/password login.');
+            } else if (error === 'oauth_failed') {
+                showError('Google Sign-In failed. Please try again or use email/password login.');
+            }
+        });
+
         function switchTab(tab) {
             const loginForm = document.getElementById('login-form');
             const registerForm = document.getElementById('register-form');
@@ -223,6 +244,25 @@
         function continueAsGuest() {
             // Redirect to main page as guest
             window.location.href = '/';
+        }
+
+        function signInWithGoogle() {
+            // Check if Google OAuth is configured by making a test request
+            fetch('/api/auth/google', {
+                method: 'HEAD',
+                redirect: 'manual'
+            }).then(response => {
+                if (response.type === 'opaqueredirect' || response.status === 302) {
+                    // Google OAuth is configured, redirect to it
+                    window.location.href = '/api/auth/google';
+                } else {
+                    // Google OAuth is not configured
+                    showError('Google Sign-In is not configured. Please use email/password login or contact the administrator.');
+                }
+            }).catch(error => {
+                // Fallback: try direct redirect (for backward compatibility)
+                window.location.href = '/api/auth/google';
+            });
         }
 
         // Handle login form submission

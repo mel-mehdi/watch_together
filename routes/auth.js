@@ -3,6 +3,7 @@ const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
 const bcrypt = require('bcryptjs');
 const nodemailer = require('nodemailer');
+const passport = require('passport');
 const User = require('../models/User');
 const router = express.Router();
 
@@ -11,15 +12,27 @@ let transporter = null;
 
 // Only create transporter if email credentials are properly configured
 if (process.env.EMAIL_HOST && process.env.EMAIL_USER && process.env.EMAIL_PASS) {
-    transporter = nodemailer.createTransporter({
-        host: process.env.EMAIL_HOST,
-        port: process.env.EMAIL_PORT || 587,
-        secure: false,
-        auth: {
-            user: process.env.EMAIL_USER,
-            pass: process.env.EMAIL_PASS
-        }
-    });
+    if (process.env.EMAIL_HOST === 'smtp.gmail.com') {
+        // Use Gmail SMTP
+        transporter = nodemailer.createTransport({
+            service: 'gmail',
+            auth: {
+                user: process.env.EMAIL_USER,
+                pass: process.env.EMAIL_PASS // This should be an App Password for Gmail
+            }
+        });
+    } else {
+        // Use custom SMTP
+        transporter = nodemailer.createTransport({
+            host: process.env.EMAIL_HOST,
+            port: process.env.EMAIL_PORT || 587,
+            secure: false,
+            auth: {
+                user: process.env.EMAIL_USER,
+                pass: process.env.EMAIL_PASS
+            }
+        });
+    }
     console.log('Email configuration found. Password reset via email is enabled.');
 } else {
     console.log('Email configuration not found. Password reset via email will be disabled.');
@@ -294,6 +307,63 @@ router.post('/logout', (req, res) => {
         message: 'Logged out successfully'
     });
 });
+
+// Google OAuth routes
+if (process.env.GOOGLE_CLIENT_ID && 
+    process.env.GOOGLE_CLIENT_SECRET && 
+    process.env.GOOGLE_CLIENT_ID !== 'your-google-client-id' && 
+    process.env.GOOGLE_CLIENT_SECRET !== 'your-google-client-secret') {
+    
+    router.get('/google',
+      passport.authenticate('google', { scope: ['profile', 'email'] })
+    );
+
+    router.get('/google/callback',
+      passport.authenticate('google', { 
+         failureRedirect: '/login.html?error=oauth_failed',
+        failureFlash: false
+      }),
+      async (req, res) => {
+        try {
+          console.log('Google OAuth callback successful for user:', req.user?.username || req.user?.email);
+          
+          // Generate JWT token for the authenticated user
+          const token = jwt.sign(
+            { userId: req.user._id, username: req.user.username },
+            process.env.JWT_SECRET || 'fallback-secret',
+            { expiresIn: '7d' }
+          );
+
+          // Update last login
+          req.user.lastLogin = new Date();
+          await req.user.save();
+
+          console.log('Redirecting to home page with token for user:', req.user.username);
+          // Redirect to home page with token
+          res.redirect(`/home.html?token=${token}`);
+        } catch (error) {
+          console.error('Google OAuth callback error:', error);
+          res.redirect('/login.html?error=oauth_failed');
+        }
+      }
+    );
+    
+    console.log('Google OAuth routes enabled and configured.');
+} else {
+    // Provide a helpful error route for unconfigured Google OAuth
+    router.get('/google', (req, res) => {
+        console.log('Google OAuth attempted but not configured properly');
+        res.redirect('/login.html?error=google_not_configured');
+    });
+    
+    if (!process.env.GOOGLE_CLIENT_ID || !process.env.GOOGLE_CLIENT_SECRET) {
+        console.log('Google OAuth routes not enabled - missing GOOGLE_CLIENT_ID or GOOGLE_CLIENT_SECRET');
+    } else if (process.env.GOOGLE_CLIENT_ID === 'your-google-client-id' || 
+               process.env.GOOGLE_CLIENT_SECRET === 'your-google-client-secret') {
+        console.log('Google OAuth routes not enabled - please configure real Google OAuth credentials in .env file');
+        console.log('Visit https://console.developers.google.com to create OAuth credentials');
+    }
+}
 
 // Forgot password
 router.post('/forgot-password', async (req, res) => {

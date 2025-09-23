@@ -57,35 +57,28 @@
     </div>
 
     <!-- Invite Modal -->
-    <div class="invite-modal" id="invite-modal">
+    <div class="modal" id="invite-modal">
         <div class="modal-content">
-            <button class="modal-close" id="close-invite-modal">
-                <i class="fas fa-times"></i>
-            </button>
-            <h2><i class="fas fa-user-plus"></i> Invite Friends to Room</h2>
-            <p class="admin-msg">Share this link with friends to invite them to join this room</p>
-                Share this link with friends to invite them to watch together
-            </p>
+            <div class="modal-header">
+                <h2><i class="fas fa-user-plus"></i> Invite Friends to Room</h2>
+                <button class="modal-close" id="close-invite-modal">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div class="modal-body">
+                <p class="modal-desc">
+                    Share this link with friends to invite them to watch together
+                </p>
             
-            <!-- Invite Link Display -->
+            <!-- Room Link Display -->
             <div class="invite-link-container">
                 <div class="invite-link-display">
-                    <input type="text" id="invite-link" readonly placeholder="Generating room join link...">
+                    <input type="text" id="invite-link" readonly placeholder="Room join link...">
                     <button id="copy-invite-link" class="copy-btn" disabled>
                         <i class="fas fa-copy"></i>
                     </button>
                 </div>
-                <div class="invite-actions">
-                    <button id="generate-invite" class="primary-btn">
-                        <i class="fas fa-link"></i>
-                        Generate Invite Link
-                    </button>
-                    <button id="revoke-invite" class="secondary-btn hidden">
-                        <i class="fas fa-times-circle"></i>
-                        Clear Link
-                    </button>
-                </div>
-            </div>
+            
 
             <!-- Share Options -->
             <div class="share-options">
@@ -110,18 +103,13 @@
                 </div>
             </div>
 
-            <!-- Invite Statistics -->
-            <div class="invite-stats hidden" id="invite-stats">
-                <div class="stat-item">
-                    <i class="fas fa-clock"></i>
-                    <span>Expires: <span id="invite-expires">Never</span></span>
-                </div>
                 <div class="stat-item">
                     <i class="fas fa-link"></i>
                     <span>Link Status: <span id="invite-status">Active</span></span>
                 </div>
             </div>
         </div>
+    </div>
     </div>
 
     <!-- Main Application -->
@@ -130,15 +118,10 @@
         <div class="chat-section">
             <!-- Chat Header - Compact Design -->
             <div class="chat-header-compact">
-                <div class="chat-header-left">
-                    <div class="chat-icon">
-                        <i class="fas fa-comments"></i>
-                    </div>
-                </div>
                 <div class="chat-header-right">
                     <!-- Header Action Buttons -->
                     <div class="header-action-buttons">
-                        <button id="invite-button" class="header-btn invite-btn" title="Invite Friends">
+                        <button id="invite-button" class="header-btn invite-btn" title="Invite Friends to Room">
                             <i class="fas fa-user-plus"></i>
                         </button>
                         <button id="room-settings" class="header-btn settings-btn" title="Room Settings">
@@ -246,39 +229,48 @@
         <div class="modal-content">
             <div class="modal-header">
                 <h2><i class="fas fa-cog"></i> Room Settings</h2>
-                <button class="close-btn" id="close-room-settings-modal">&times;</button>
+                <button class="modal-close" id="close-room-settings-modal">
+                    <i class="fas fa-times"></i>
+                </button>
             </div>
             <div class="modal-body">
                 <div class="settings-section">
                     <h3><i class="fas fa-comment-dots"></i> Chat Notifications</h3>
-                    <p class="settings-description">Control which system messages appear in the chat. Only the room admin can change these settings.</p>
-                    
                     <div class="settings-toggles">
                         <label class="toggle-label">
                             <input type="checkbox" id="modal-toggle-join-leave">
-                            <span class="toggle-text">
-                                <i class="fas fa-sign-in-alt"></i>
-                                Join/Leave messages
-                            </span>
-                            <small class="toggle-description">Show when users join or leave the room</small>
+                            <div class="toggle-content">
+                                <div class="toggle-text">
+                                    <i class="fas fa-sign-in-alt"></i>
+                                    Join/Leave messages
+                                </div>
+                                <div class="toggle-description">Show when users join or leave the room</div>
+                            </div>
+                            <div class="toggle-switch"></div>
                         </label>
                         
                         <label class="toggle-label">
                             <input type="checkbox" id="modal-toggle-admin-change" checked>
-                            <span class="toggle-text">
-                                <i class="fas fa-crown"></i>
-                                Admin change messages
-                            </span>
-                            <small class="toggle-description">Show when admin control is transferred</small>
+                            <div class="toggle-content">
+                                <div class="toggle-text">
+                                    <i class="fas fa-crown"></i>
+                                    Admin change messages
+                                </div>
+                                <div class="toggle-description">Show when admin control is transferred</div>
+                            </div>
+                            <div class="toggle-switch"></div>
                         </label>
                         
                         <label class="toggle-label">
                             <input type="checkbox" id="modal-toggle-video-change" checked>
-                            <span class="toggle-text">
-                                <i class="fas fa-video"></i>
-                                Video change messages
-                            </span>
-                            <small class="toggle-description">Show when the video is changed</small>
+                            <div class="toggle-content">
+                                <div class="toggle-text">
+                                    <i class="fas fa-video"></i>
+                                    Video change messages
+                                </div>
+                                <div class="toggle-description">Show when the video is changed</div>
+                            </div>
+                            <div class="toggle-switch"></div>
                         </label>
                     </div>
                 </div>
@@ -287,22 +279,19 @@
                     <h3><i class="fas fa-info-circle"></i> Room Information</h3>
                     <div class="room-info">
                         <div class="info-item">
-                            <label>Room Code:</label>
+                            <label><i class="fas fa-hashtag"></i>Room Code:</label>
                             <span id="room-code-display">Loading...</span>
                         </div>
                         <div class="info-item">
-                            <label>Current Admin:</label>
+                            <label><i class="fas fa-crown"></i>Current Admin:</label>
                             <span id="current-admin-display">Loading...</span>
                         </div>
                         <div class="info-item">
-                            <label>Connected Users:</label>
+                            <label><i class="fas fa-users"></i>Connected Users:</label>
                             <span id="connected-users-count">0</span>
                         </div>
                     </div>
                 </div>
-            </div>
-            <div class="modal-footer">
-                <button class="secondary-btn" id="close-room-settings-btn">Close</button>
             </div>
         </div>
     </div>

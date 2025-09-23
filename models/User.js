@@ -22,6 +22,16 @@ const userSchema = new mongoose.Schema({
     type: String,
     minlength: 6
   },
+  googleId: {
+    type: String,
+    unique: true,
+    sparse: true
+  },
+  provider: {
+    type: String,
+    default: 'local',
+    enum: ['local', 'google']
+  },
   isGuest: {
     type: Boolean,
     default: false
@@ -72,10 +82,10 @@ const userSchema = new mongoose.Schema({
 
 // Pre-save validation: email and password required only for non-guest users
 userSchema.pre('validate', function(next) {
-  if (!this.isGuest && !this.email) {
+  if (!this.isGuest && this.provider === 'local' && !this.email) {
     this.invalidate('email', 'Email is required for registered users');
   }
-  if (!this.isGuest && !this.password) {
+  if (!this.isGuest && this.provider === 'local' && !this.password) {
     this.invalidate('password', 'Password is required for registered users');
   }
   next();

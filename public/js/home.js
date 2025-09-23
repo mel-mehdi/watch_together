@@ -658,32 +658,8 @@ class WatchTogetherHome {
     }
 
     showNotification(message, type = 'info') {
-        // Create notification element
-        const notification = document.createElement('div');
-        notification.className = `notification notification-${type}`;
-        
-        let iconClass = 'info-circle';
-        if (type === 'error') iconClass = 'exclamation-circle';
-        if (type === 'success') iconClass = 'check-circle';
-        
-        notification.innerHTML = `
-            <div class="notification-content">
-                <i class="fas fa-${iconClass}"></i>
-                <span>${message}</span>
-            </div>
-        `;
-        
-        // Add to page
-        document.body.appendChild(notification);
-        
-        // Show notification
-        setTimeout(() => notification.classList.add('show'), 100);
-        
-        // Remove notification
-        setTimeout(() => {
-            notification.classList.remove('show');
-            setTimeout(() => notification.remove(), 300);
-        }, 4000);
+        // Notifications disabled - no popup notifications will be shown
+        console.log(`Notification (${type}): ${message}`);
     }
 
     escapeHtml(text) {
