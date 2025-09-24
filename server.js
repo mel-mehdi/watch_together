@@ -158,104 +158,6 @@ if (process.env.GOOGLE_CLIENT_ID &&
     console.log('Google OAuth strategy not configured - using placeholder credentials or missing configuration');
 }
 
-// Debug middleware to log all requests
-app.use((req, res, next) => {
-    console.log(`🔍 Request: ${req.method} ${req.url}`);
-    next();
-});
-
-// Session configuration
-app.use(session({
-    secret: process.env.SESSION_SECRET || 'fallback-session-secret',
-    resave: false,
-    saveUninitialized: false,
-    store: isDatabaseConnected ? MongoStore.create({
-        mongoUrl: process.env.MONGO_URI
-    }) : undefined, // Use memory store if no database
-    cookie: {
-        secure: false, // Set to true if using HTTPS
-        httpOnly: true,
-        maxAge: 1000 * 60 * 60 * 24 * 7 // 7 days
-    }
-}));
-
-// Passport configuration
-app.use(passport.initialize());
-app.use(passport.session());
-
-// Google OAuth Strategy - only configure if credentials are properly set
-if (process.env.GOOGLE_CLIENT_ID && 
-    process.env.GOOGLE_CLIENT_SECRET && 
-    process.env.GOOGLE_CLIENT_ID !== 'your-google-client-id' && 
-    process.env.GOOGLE_CLIENT_SECRET !== 'your-google-client-secret') {
-    
-    passport.use(new GoogleStrategy({
-        clientID: process.env.GOOGLE_CLIENT_ID,
-        clientSecret: process.env.GOOGLE_CLIENT_SECRET,
-        callbackURL: process.env.GOOGLE_CALLBACK_URL || '/api/auth/google/callback'
-      },
-      async (accessToken, refreshToken, profile, done) => {
-        try {
-          console.log('Google OAuth profile received:', profile.id, profile.emails[0]?.value, profile.displayName);
-          
-          // Check if user already exists with this Google ID
-          let user = await User.findOne({ googleId: profile.id });
-          
-          if (user) {
-            console.log('Existing Google user found:', user.username);
-            return done(null, user);
-          }
-          
-          // Check if user exists with same email
-          user = await User.findOne({ email: profile.emails[0].value });
-          
-          if (user) {
-            // Link Google account to existing user
-            console.log('Linking Google account to existing user:', user.username);
-            user.googleId = profile.id;
-            user.provider = 'google';
-            await user.save();
-            return done(null, user);
-          }
-          
-          // Create new user
-          const username = profile.displayName.replace(/\s+/g, '').toLowerCase() + Math.floor(Math.random() * 1000);
-          console.log('Creating new user from Google OAuth:', username, profile.emails[0].value);
-          
-          user = new User({
-            username: username,
-            email: profile.emails[0].value,
-            googleId: profile.id,
-            provider: 'google',
-            avatar: profile.photos[0]?.value
-          });
-          
-          await user.save();
-          console.log('New Google user created successfully:', user.username);
-          return done(null, user);
-        } catch (error) {
-          console.error('Google OAuth strategy error:', error);
-          return done(error, null);
-        }
-      }
-    ));
-    
-    passport.serializeUser((user, done) => {
-      done(null, user.id);
-    });
-
-    passport.deserializeUser(async (id, done) => {
-      try {
-        const user = await User.findById(id);
-        done(null, user);
-      } catch (error) {
-        done(error, null);
-      }
-    });
-} else {
-    console.log('Google OAuth strategy not configured - using placeholder credentials or missing configuration');
-}
-
 const users = {};
 // Store room-specific data for each socket connection
 const socketRooms = new Map(); // socketId -> roomId
@@ -974,18 +876,19 @@ app.use('/api/auth', authRoutes);
 app.use('/api/rooms', roomRoutes);
 app.use('/api/admin', adminRoutes);
 
-// Root route - serve the home page or redirect to login
+// Root route - serve the home page
 app.get('/', (req, res) => {
-    if (req.isAuthenticated()) {
-        res.sendFile(__dirname + '/public/home.html');
-    } else {
-        res.sendFile(__dirname + '/public/index.html');
-    }
+    res.sendFile(__dirname + '/public/home.html');
 });
 
 // Join room page
 app.get('/join', (req, res) => {
     res.sendFile(__dirname + '/public/join.html');
+});
+
+// Admin page
+app.get('/admin', (req, res) => {
+    res.sendFile(__dirname + '/public/admin.html');
 });
 
 // Room page - serve the main app for room access

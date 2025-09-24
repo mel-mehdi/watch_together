@@ -2296,11 +2296,13 @@ class WatchTogetherApp {
                 roomId: roomId,
                 username: this.appState.username
             });
-
             NotificationSystem.show(`Joined ${roomInfo.room.name}!`, 'success');
         } catch (error) {
             console.error('Error auto-joining room:', error);
-            NotificationSystem.show('Failed to join room', 'error');
+            NotificationSystem.show('Room not found. Redirecting to home...', 'error');
+            setTimeout(() => {
+                window.location.href = '/home.html';
+            }, 2000);
         }
     }
 
@@ -2543,3 +2545,53 @@ window.addEventListener('unhandledrejection', (event) => {
 
 // Export for global access
 window.app = app;
+
+// ========================================
+// GLOBAL SHARE FUNCTIONS
+// ========================================
+
+window.shareViaWhatsApp = function() {
+    const linkElement = document.getElementById("created-room-link") || document.getElementById("invite-link");
+    if (!linkElement) return;
+    const link = linkElement.value;
+    const message = `Join my Watch Together room: ${link}`;
+    window.open(`https://wa.me/?text=${encodeURIComponent(message)}`, "_blank");
+};
+
+window.shareViaDiscord = function() {
+    const linkElement = document.getElementById("created-room-link") || document.getElementById("invite-link");
+    if (!linkElement) return;
+    const link = linkElement.value;
+    const message = `Join my Watch Together room: ${link}`;
+    
+    // Try to open Discord web app
+    window.open("https://discord.com/app", "_blank");
+    
+    // Copy to clipboard as fallback
+    navigator.clipboard.writeText(message).then(() => {
+        console.log("Link copied to clipboard! Paste it in Discord.");
+    }).catch(() => {
+        console.log("Failed to copy link. Please copy manually.");
+    });
+};
+
+window.shareViaEmail = function() {
+    const linkElement = document.getElementById("created-room-link") || document.getElementById("invite-link");
+    if (!linkElement) return;
+    const link = linkElement.value;
+    const subject = "Join my Watch Together room";
+    const body = `Hey! Join my Watch Together room here: ${link}`;
+    
+    // Open Gmail compose
+    const gmailUrl = `https://mail.google.com/mail/?view=cm&fs=1&to=&su=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+    window.open(gmailUrl, "_blank");
+};
+
+window.shareViaTwitter = function() {
+    const linkElement = document.getElementById("created-room-link") || document.getElementById("invite-link");
+    if (!linkElement) return;
+    const link = linkElement.value;
+    const message = `Join my Watch Together room: ${link}`;
+    window.open(`https://twitter.com/intent/tweet?text=${encodeURIComponent(message)}`, "_blank");
+};
+

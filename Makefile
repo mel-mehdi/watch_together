@@ -1,11 +1,11 @@
 # Watch Together - Simple Makefile
 
-.PHONY: all clean install docker
+IP := $(shell hostname -I | awk '{print $1}')
+IP := $(if $(IP),$(IP),localhost)
 
-# Default target - install and start
 all:
+	@echo "http://$(IP):3000/"
 	@npm start
-
 # Install dependencies
 install:
 	@echo "Installing dependencies..."
@@ -20,4 +20,6 @@ clean:
 
 # Start with Docker Compose
 docker:
-	
+	docker-compose up -d
+
+.PHONY: all clean install docker

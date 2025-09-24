@@ -169,6 +169,40 @@ async function loadDashboardData() {
             updateDashboardStats(stats);
         } else {
             console.error('Failed to load stats:', statsResponse.status);
+            
+            // If 403 Forbidden, try to refresh user data and retry
+            if (statsResponse.status === 403) {
+                console.log('🔄 403 Forbidden - refreshing user data...');
+                try {
+                    const userResponse = await fetch('/api/auth/me', {
+                        headers: {
+                            'Authorization': `Bearer ${authToken}`
+                        }
+                    });
+                    
+                    if (userResponse.ok) {
+                        const userData = await userResponse.json();
+                        localStorage.setItem('userData', JSON.stringify(userData.user));
+                        console.log('✅ User data refreshed:', userData.user);
+                        
+                        // Retry the stats request
+                        const retryResponse = await fetch('/api/admin/stats', {
+                            headers: {
+                                'Authorization': `Bearer ${authToken}`
+                            }
+                        });
+                        
+                        if (retryResponse.ok) {
+                            const stats = await retryResponse.json();
+                            updateDashboardStats(stats);
+                            return;
+                        }
+                    }
+                } catch (refreshError) {
+                    console.error('Failed to refresh user data:', refreshError);
+                }
+            }
+            
             showNotification('Failed to load dashboard stats', 'error');
             // Fallback to zeros
             updateDashboardStats({

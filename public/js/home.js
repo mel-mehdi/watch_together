@@ -1,6 +1,7 @@
 // Home page functionality
 class WatchTogetherHome {
     constructor() {
+        console.log('WatchTogetherHome constructor called');
         this.socket = io();
         this.currentUser = null;
         this.initializeElements();
@@ -51,8 +52,9 @@ class WatchTogetherHome {
         
         // Share buttons
         this.shareWhatsApp = document.getElementById('share-whatsapp');
-        this.shareTelegram = document.getElementById('share-telegram');
+        this.shareDiscord = document.getElementById('share-discord');
         this.shareEmail = document.getElementById('share-email');
+        this.shareTwitter = document.getElementById('share-twitter');
         
         // Other elements
         this.roomPreview = document.getElementById('room-preview');
@@ -96,9 +98,10 @@ class WatchTogetherHome {
         });
         
         // Share buttons
-        this.shareWhatsApp.addEventListener('click', () => this.shareViaWhatsApp());
-        this.shareTelegram.addEventListener('click', () => this.shareViaTelegram());
-        this.shareEmail.addEventListener('click', () => this.shareViaEmail());
+        this.shareWhatsApp.addEventListener('click', () => shareViaWhatsApp());
+        this.shareDiscord.addEventListener('click', () => shareViaDiscord());
+        this.shareEmail.addEventListener('click', () => shareViaEmail());
+        this.shareTwitter.addEventListener('click', () => shareViaTwitter());
         
         // Input events
         this.roomCodeInput.addEventListener('keypress', (e) => {
@@ -185,6 +188,7 @@ class WatchTogetherHome {
     }
 
     showCreateRoomModal() {
+        console.log('Show create room modal called');
         this.createRoomModal.classList.add('active');
         
         // Auto-fill username if user is authenticated
@@ -447,158 +451,69 @@ class WatchTogetherHome {
         }
     }
 
-    async loadRecentRooms() {
-        // Load recent rooms from localStorage
-        let recentRooms = JSON.parse(localStorage.getItem('recentRooms') || '[]');
-        
-        // Validate rooms with server (remove deleted ones)
-        if (recentRooms.length > 0) {
-            recentRooms = await this.validateRecentRooms(recentRooms);
-            // Update localStorage with validated rooms
-            localStorage.setItem('recentRooms', JSON.stringify(recentRooms));
-        }
-        
-        if (recentRooms.length > 0) {
-            this.displayRecentRooms(recentRooms);
-        } else {
-            this.recentRoomsSection.style.display = 'none';
-        }
-        
-        // Also request from server if user is logged in
-        if (this.currentUser) {
-            this.socket.emit('get recent rooms');
-        }
-    }
-
-    async validateRecentRooms(rooms) {
-        const validatedRooms = [];
-        
-        for (const room of rooms) {
-            try {
-                const response = await fetch(`/api/rooms/info/${room.roomCode}`);
-                const result = await response.json();
-                if (result.success) {
-                    validatedRooms.push(room);
-                }
-            } catch (error) {
-                console.error('Error validating room:', room.roomCode, error);
-                // Keep the room if we can't validate (network error)
-                validatedRooms.push(room);
-            }
-        }
-        
-        return validatedRooms;
+    loadRecentRooms() {
+        // Request recent rooms from server
+        // For now, this is a placeholder
+        console.log('Loading recent rooms...');
+        // TODO: Implement recent rooms loading
     }
 
     displayRecentRooms(rooms) {
-        if (!rooms || rooms.length === 0) {
-            this.recentRoomsSection.style.display = 'none';
-            return;
-        }
-        
-        this.recentRoomsSection.style.display = 'block';
-        this.roomsGrid.innerHTML = '';
-        
-        rooms.forEach(room => {
-            const roomCard = this.createRoomCard(room);
-            this.roomsGrid.appendChild(roomCard);
-        });
-    }
-
-    createRoomCard(room) {
-        const card = document.createElement('div');
-        card.className = 'room-card';
-        
-        card.innerHTML = `
-            <div class="room-card-header">
-                <h3>${this.escapeHtml(room.name)}</h3>
-                <span class="room-code">${room.roomCode}</span>
-            </div>
-            <p class="room-description">${this.escapeHtml(room.description || 'No description')}</p>
-            <div class="room-meta">
-                <span class="participants">
-                    <i class="fas fa-users"></i>
-                    ${room.participantCount || 0} participants
-                </span>
-                <span class="last-active">
-                    Last active: ${this.formatDate(room.lastActive)}
-                </span>
-            </div>
-        `;
-        
-        card.addEventListener('click', () => {
-            this.roomCodeInput.value = room.roomCode;
-            this.quickJoinRoom();
-        });
-        
-        return card;
-    }
-
-    showLoading(text) {
-        this.loadingText.textContent = text;
-        this.loadingOverlay.style.display = 'flex';
-    }
-
-    hideLoading() {
-        this.loadingOverlay.style.display = 'none';
+        // Display recent rooms in the UI
+        console.log('Displaying recent rooms:', rooms);
+        // TODO: Implement recent rooms display
     }
 
     onRoomCreated(data) {
+        console.log('Room created:', data);
         this.hideLoading();
-        
-        if (data.success) {
-            // Save to recent rooms
-            this.saveToRecentRooms(data.room);
-            
-            // Hide create modal and show success modal
-            this.hideCreateRoomModal();
-            this.showRoomCreatedModal(data.room);
-        } else {
-            this.showNotification(data.message || 'Failed to create room', 'error');
-        }
+        this.showRoomCreatedModal(data);
     }
 
     onRoomJoined(data) {
-        this.hideLoading();
-        
-        if (data.success) {
-            // Save to recent rooms
-            this.saveToRecentRooms(data.room);
-            
-            // Redirect to room
-            window.location.href = `/room/${data.room.roomCode}`;
-        } else {
-            this.showNotification(data.message || 'Failed to join room', 'error');
-        }
+        console.log('Room joined:', data);
+        // Redirect to room page
+        window.location.href = `/room/${data.roomCode}`;
     }
 
     onRoomError(error) {
+        console.error('Room error:', error);
         this.hideLoading();
         this.showNotification(error.message || 'An error occurred', 'error');
     }
 
     onRoomInfo(info) {
-        if (info.exists) {
+        console.log('Room info:', info);
+        // Update room preview
+        if (this.roomPreview && info) {
             this.roomPreview.style.display = 'block';
-            this.roomPreview.querySelector('.room-name-preview').textContent = info.name;
-            this.roomPreview.querySelector('.room-description-preview').textContent = 
-                info.description || 'No description';
-            this.roomPreview.querySelector('.room-participants').textContent = 
-                `${info.participantCount} participant(s) currently in room`;
-        } else {
-            this.roomPreview.style.display = 'none';
-            this.showNotification('Room not found', 'error');
+            // TODO: Populate room preview with info
         }
     }
 
     onRoomDeleted(data) {
-        this.showNotification('Room has been deleted', 'error');
-        
-        // Remove from recent rooms if it was there
-        this.removeRecentRoom(data.roomCode);
-        
-        // Optionally, you can also refresh the recent rooms list from the server
-        this.loadRecentRooms();
+        console.log('Room deleted:', data);
+        // Remove from recent rooms if displayed
+        // TODO: Implement room deletion handling
+    }
+
+    showNotification(message, type = 'info') {
+        // Simple notification system
+        console.log(`${type.toUpperCase()}: ${message}`);
+        // TODO: Implement proper notification UI
+    }
+
+    showLoading(text = 'Loading...') {
+        if (this.loadingOverlay) {
+            this.loadingOverlay.classList.remove('hidden');
+            this.loadingText.textContent = text;
+        }
+    }
+
+    hideLoading() {
+        if (this.loadingOverlay) {
+            this.loadingOverlay.classList.add('hidden');
+        }
     }
 
     saveToRecentRooms(room) {
@@ -670,93 +585,7 @@ class WatchTogetherHome {
 
     formatDate(dateString) {
         const date = new Date(dateString);
-        const now = new Date();
-        const diffMs = now - date;
-        const diffMins = Math.floor(diffMs / 60000);
-        const diffHours = Math.floor(diffMins / 60);
-        const diffDays = Math.floor(diffHours / 24);
-        
-        if (diffMins < 1) return 'Just now';
-        if (diffMins < 60) return `${diffMins}m ago`;
-        if (diffHours < 24) return `${diffHours}h ago`;
-        if (diffDays < 30) return `${diffDays}d ago`;
-        
-        return date.toLocaleDateString();
-    }
-
-    async copyToClipboard(button) {
-        const copyType = button.getAttribute('data-copy');
-        let textToCopy = '';
-        
-        if (copyType === 'code') {
-            textToCopy = this.createdRoomCode.value;
-        } else if (copyType === 'link') {
-            textToCopy = this.createdRoomLink.value;
-        }
-        
-        try {
-            await navigator.clipboard.writeText(textToCopy);
-            
-            // Update button to show success
-            const originalText = button.innerHTML;
-            button.classList.add('copied');
-            button.innerHTML = '<i class="fas fa-check"></i> Copied!';
-            
-            setTimeout(() => {
-                button.classList.remove('copied');
-                button.innerHTML = originalText;
-            }, 2000);
-            
-            this.showNotification(`${copyType === 'code' ? 'Room code' : 'Room link'} copied to clipboard!`, 'success');
-        } catch (err) {
-            this.showNotification('Failed to copy to clipboard', 'error');
-        }
-    }
-
-    shareViaWhatsApp() {
-        if (!this.currentRoomData) return;
-        
-        const message = `🎬 Join my Watch Together room!\n\nRoom: ${this.currentRoomData.name}\nCode: ${this.currentRoomData.roomCode}\nLink: ${window.location.origin}/room/${this.currentRoomData.roomCode}\n\nLet's watch something together! 🍿`;
-        const url = `https://wa.me/?text=${encodeURIComponent(message)}`;
-        window.open(url, '_blank');
-    }
-
-    shareViaTelegram() {
-        if (!this.currentRoomData) return;
-        
-        const message = `🎬 Join my Watch Together room!\n\nRoom: ${this.currentRoomData.name}\nCode: ${this.currentRoomData.roomCode}\nLink: ${window.location.origin}/room/${this.currentRoomData.roomCode}\n\nLet's watch something together! 🍿`;
-        const url = `https://t.me/share/url?url=${encodeURIComponent(window.location.origin + '/room/' + this.currentRoomData.roomCode)}&text=${encodeURIComponent(message)}`;
-        window.open(url, '_blank');
-    }
-
-    shareViaEmail() {
-        if (!this.currentRoomData) return;
-        
-        const subject = `Join my Watch Together room: ${this.currentRoomData.name}`;
-        const body = `Hi!\n\nI've created a Watch Together room and would love for you to join!\n\nRoom Name: ${this.currentRoomData.name}\nRoom Code: ${this.currentRoomData.roomCode}\nDirect Link: ${window.location.origin}/room/${this.currentRoomData.roomCode}\n\nJust click the link or enter the room code on ${window.location.origin} to join. Let's watch something together!\n\nSee you there! 🎬🍿`;
-        
-        const mailtoUrl = `mailto:?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
-        window.location.href = mailtoUrl;
-    }
-
-    logout() {
-        // Clear authentication data
-        localStorage.removeItem('authToken');
-        localStorage.removeItem('userData');
-        
-        // Reset current user
-        this.currentUser = null;
-        
-        // Update UI
-        this.updateAuthUI();
-        
-        // Show notification
-        this.showNotification('Logged out successfully', 'success');
-        
-        // Optionally refresh the page to reset all states
-        setTimeout(() => {
-            window.location.reload();
-        }, 1000);
+        return date.toLocaleDateString() + ' ' + date.toLocaleTimeString();
     }
 }
 
