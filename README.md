@@ -41,9 +41,9 @@ docker-compose up -d
 
 ### 3. Access the Application
 
-- **Application**: http://localhost:3000
-- **MongoDB**: mongodb://localhost:27017
-- **Health Check**: http://localhost:3000/health
+- **Application**: http://172.21.103.111:3000
+- **MongoDB**: mongodb://172.21.103.111:27017
+- **Health Check**: http://172.21.103.111:3000/health
 
 To access the application from other devices on the same network, use `http://<your-local-ip>:3000`. To find your local IP address, run `hostname -I` in the terminal.
 
@@ -141,7 +141,7 @@ PORT=3000
 NODE_ENV=development
 
 # Database
-MONGODB_URI=mongodb://localhost:27017/watch-together
+MONGODB_URI=mongodb://172.21.103.111:27017/watch-together
 
 # Authentication
 JWT_SECRET=your-super-secret-jwt-key
@@ -156,7 +156,7 @@ EMAIL_PASS=your-app-password
 # Google OAuth (Optional)
 GOOGLE_CLIENT_ID=your-google-client-id
 GOOGLE_CLIENT_SECRET=your-google-client-secret
-GOOGLE_CALLBACK_URL=http://localhost:3000/api/auth/google/callback
+GOOGLE_CALLBACK_URL=http://172.21.103.111:3000/api/auth/google/callback
 
 # Application Settings
 DEFAULT_ROOM=default
@@ -316,7 +316,7 @@ To enable Google sign-in and Gmail-based password reset:
 4. Go to "Credentials" → "Create Credentials" → "OAuth 2.0 Client IDs"
 5. Set application type to "Web application"
 6. Add authorized redirect URIs:
-   - `http://localhost:3000/api/auth/google/callback` (development)
+   - `http://172.21.103.111:3000/api/auth/google/callback` (development)
    - `https://yourdomain.com/api/auth/google/callback` (production)
 7. Copy Client ID and Client Secret
 
@@ -332,7 +332,7 @@ To enable Google sign-in and Gmail-based password reset:
 # Google OAuth
 GOOGLE_CLIENT_ID=your-google-client-id
 GOOGLE_CLIENT_SECRET=your-google-client-secret
-GOOGLE_CALLBACK_URL=http://localhost:3000/api/auth/google/callback
+GOOGLE_CALLBACK_URL=http://172.21.103.111:3000/api/auth/google/callback
 
 # Gmail SMTP
 EMAIL_HOST=smtp.gmail.com

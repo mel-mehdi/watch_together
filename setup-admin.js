@@ -9,7 +9,7 @@ require('dotenv').config();
 // Connect to database
 const connectDB = async () => {
     try {
-        await mongoose.connect(process.env.MONGO_URI || 'mongodb://localhost:27017/watch-together');
+        await mongoose.connect(process.env.MONGO_URI || 'mongodb://172.21.103.111:27017/watch-together');
         console.log('✅ Database connected successfully');
     } catch (error) {
         console.error('❌ Database connection failed:', error);
@@ -83,8 +83,8 @@ const createAdminUser = async () => {
         console.log(`   Password: ${adminData.password}`);
         console.log('');
         console.log('🌐 Access URLs:');
-        console.log('   Login: http://localhost:3000/login.html');
-        console.log('   Admin Panel: http://localhost:3000/admin');
+        console.log('   Login: http://172.21.103.111:3000/login.html');
+        console.log('   Admin Panel: http://172.21.103.111:3000/admin');
         console.log('');
         console.log('⚠️  IMPORTANT: Change the default password after first login!');
         
@@ -100,8 +100,8 @@ const main = async () => {
     
     console.log('');
     console.log('🚀 Setup complete! You can now:');
-    console.log('   1. Login at: http://localhost:3000/login.html');
-    console.log('   2. Access admin panel at: http://localhost:3000/admin');
+    console.log('   1. Login at: http://172.21.103.111:3000/login.html');
+    console.log('   2. Access admin panel at: http://172.21.103.111:3000/admin');
     console.log('');
     
     process.exit(0);

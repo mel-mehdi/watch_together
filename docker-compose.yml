@@ -32,7 +32,7 @@ services:
     image: mongo:6.0
     container_name: watch-together-mongo
     ports:
-      - "27017:27017"
+      - "27018:27017"
     environment:
       - MONGO_INITDB_DATABASE=watch-together
     volumes:

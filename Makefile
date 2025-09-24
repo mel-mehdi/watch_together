@@ -1,7 +1,7 @@
 # Watch Together - Simple Makefile
 
 IP := $(shell hostname -I | awk '{print $1}')
-IP := $(if $(IP),$(IP),localhost)
+IP := $(if $(IP),$(IP),172.21.103.111)
 
 all:
 	@echo "http://$(IP):3000/"
