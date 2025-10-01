@@ -267,6 +267,20 @@ async function loadRecentMessages(roomId, limit = 50) {
 io.on('connection', async (socket) => {
     console.log('A user connected');
     
+    // Get user info from auth token if available
+    let authenticatedUser = null;
+    if (socket.handshake.auth?.token) {
+        try {
+            const jwt = require('jsonwebtoken');
+            const decoded = jwt.verify(socket.handshake.auth.token, process.env.JWT_SECRET || 'fallback-secret-key');
+            if (decoded.userId) {
+                authenticatedUser = await User.findById(decoded.userId);
+            }
+        } catch (error) {
+            console.log('Invalid or expired token for socket connection');
+        }
+    }
+    
     // Handle joining a specific room
     socket.on('join room', async ({ roomId, username }) => {
         try {
@@ -292,28 +306,35 @@ io.on('connection', async (socket) => {
 
             // Handle user creation/lookup
             let userId = null;
+            let userAvatar = '';
             if (isDatabaseConnected) {
                 try {
-                    let user = await User.findOne({ username });
+                    let user = authenticatedUser;
                     if (!user) {
-                        const guestEmail = `${username.toLowerCase().replace(/[^a-z0-9]/g, '')}_${Date.now()}@guest.com`;
-                        user = new User({ 
-                            username, 
-                            email: guestEmail,
-                            isGuest: true 
-                        });
-                        await user.save();
+                        // Try to find existing user by username
+                        user = await User.findOne({ username });
+                        if (!user) {
+                            const guestEmail = `${username.toLowerCase().replace(/[^a-z0-9]/g, '')}_${Date.now()}@guest.com`;
+                            user = new User({ 
+                                username, 
+                                email: guestEmail,
+                                isGuest: true 
+                            });
+                            await user.save();
+                        }
                     }
                     userId = user._id;
+                    userAvatar = user.avatar || '';
                 } catch (error) {
                     console.error('Database error during user join:', error.message);
                 }
             }
 
-            // Store user info
+            // Store user info (including avatar)
             users[socket.id] = {
                 userId: userId,
                 username: username,
+                avatar: userAvatar,
                 roomId: actualRoomId, // Use the actual ObjectId
                 roomCode: room.roomCode, // Also store the room code for reference
                 isAdmin: false
@@ -402,6 +423,7 @@ io.on('connection', async (socket) => {
         const sanitizedMessage = msg.trim().substring(0, 500);
         const messageData = {
             username: user.username,
+            avatar: user.avatar || '',
             message: sanitizedMessage,
             timestamp: new Date().toISOString(),
             isAdmin: user.isAdmin

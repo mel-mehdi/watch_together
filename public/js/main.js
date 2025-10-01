@@ -104,7 +104,7 @@ class DOMCache {
         const elementIds = [
             'form', 'input', 'messages', 'username-modal', 'username-input', 'username-submit',
             'video-player', 'direct-video-player', 'video-url', 'change-video',
-            'admin-controls', 'admin-notice', 'request-admin-container', 'request-admin',
+            'admin-controls', 'admin-notice', 'request-admin',
             'admin-request-modal', 'admin-request-message', 'accept-admin-request', 'reject-admin-request',
             'admin-play', 'admin-pause', 'admin-restart', 'admin-viewing-notice',
             'users-in-call', 'video-history-btn', 'video-history',
@@ -1019,11 +1019,29 @@ class WatchTogetherApp {
         const acceptAdminBtn = this.domCache.get('accept-admin-request');
         const rejectAdminBtn = this.domCache.get('reject-admin-request');
 
+        console.log('Setting up admin controls, requestAdminBtn:', requestAdminBtn);
+
         if (requestAdminBtn) {
-            requestAdminBtn.addEventListener('click', () => {
+            console.log('Button display style:', requestAdminBtn.style.display);
+            console.log('Button visible:', requestAdminBtn.offsetWidth > 0 && requestAdminBtn.offsetHeight > 0);
+            
+            requestAdminBtn.addEventListener('click', (e) => {
+                e.preventDefault();
+                console.log('Request admin button clicked!');
+                console.log('Current admin user:', this.appState.currentAdminUser);
+                console.log('Is admin:', this.appState.isAdmin);
+                
+                if (this.appState.isAdmin) {
+                    console.log('User is already admin, not sending request');
+                    return;
+                }
+                
                 this.socketManager.emit('request admin');
-                NotificationSystem.show(`Request sent to ${this.appState.currentAdminUser} to become admin`, 'info');
+                NotificationSystem.show(`Request sent to ${this.appState.currentAdminUser || 'admin'} to become admin`, 'info');
             });
+            console.log('Admin request event listener attached successfully');
+        } else {
+            console.warn('Request admin button not found in DOM cache');
         }
 
         if (acceptAdminBtn) {
@@ -1084,6 +1102,12 @@ class WatchTogetherApp {
         this.socketManager.on('admin user', (adminUsername) => {
             this.appState.currentAdminUser = adminUsername;
             this.updateAdminUI();
+        });
+
+        // Admin request events
+        this.socketManager.on('admin request', (requestingUsername, requestingUserId) => {
+            console.log('Received admin request from:', requestingUsername, 'ID:', requestingUserId);
+            this.showAdminRequestModal(requestingUsername, requestingUserId);
         });
 
         // Video sync events
@@ -1446,6 +1470,13 @@ class WatchTogetherApp {
         const messages = this.domCache.get('messages');
         if (!messages) return;
 
+        // Debug: log the message data
+        console.log('📨 Chat message received:', {
+            username: msg.username,
+            avatar: msg.avatar ? `${msg.avatar.substring(0, 50)}...` : 'No avatar',
+            hasAvatar: !!msg.avatar
+        });
+
         // Handle timestamp properly - use current time if timestamp is invalid or missing
         let timeString;
         try {
@@ -1513,7 +1544,7 @@ class WatchTogetherApp {
 
     createNewMessageGroup(messages, msg, isSentByCurrentUser, timeString) {
         const messageClass = isSentByCurrentUser ? 'message-sent' : 'message-received';
-        const avatar = this.generateAvatar(msg.username);
+        const avatar = this.generateAvatar(msg.username, msg.avatar);
         
         const messageElement = document.createElement('li');
         messageElement.className = `message-group ${messageClass}`;
@@ -1544,7 +1575,12 @@ class WatchTogetherApp {
         messages.appendChild(messageElement);
     }
 
-    generateAvatar(username) {
+    generateAvatar(username, avatarUrl = null) {
+        // If avatar URL is provided, use it as background image
+        if (avatarUrl && avatarUrl.trim()) {
+            return `<div class="avatar avatar-with-image" style="background-image: url('${avatarUrl}');" title="${username}"></div>`;
+        }
+        
         // Generate consistent avatar based on username
         const colors = [
             'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
@@ -1600,7 +1636,7 @@ class WatchTogetherApp {
                 // Handle regular message groups
                 const isSentByCurrentUser = group.username === this.appState.username;
                 const messageClass = isSentByCurrentUser ? 'message-sent' : 'message-received';
-                const avatar = this.generateAvatar(group.username);
+                const avatar = this.generateAvatar(group.username, group.avatar);
                 
                 const messageElement = document.createElement('li');
                 messageElement.className = `message-group ${messageClass}`;
@@ -1688,6 +1724,7 @@ class WatchTogetherApp {
                     // Create new group
                     currentGroup = {
                         username: msg.username,
+                        avatar: msg.avatar,
                         timestamp,
                         timeString,
                         messages: [{
@@ -1762,16 +1799,24 @@ class WatchTogetherApp {
     updateAdminUI() {
         const adminControls = this.domCache.get('admin-controls');
         const adminNotice = this.domCache.get('admin-notice');
-        const requestAdminContainer = this.domCache.get('request-admin-container');
+        const requestAdminBtn = this.domCache.get('request-admin');
+
+        console.log('updateAdminUI called - isAdmin:', this.appState.isAdmin);
+        console.log('requestAdminBtn found:', !!requestAdminBtn);
 
         if (this.appState.isAdmin) {
+            console.log('User is admin - hiding request button');
             if (adminControls) adminControls.style.display = 'block';
             if (adminNotice) adminNotice.style.display = 'block';
-            if (requestAdminContainer) requestAdminContainer.style.display = 'none';
+            if (requestAdminBtn) requestAdminBtn.style.display = 'none';
         } else {
+            console.log('User is not admin - showing request button');
             if (adminControls) adminControls.style.display = 'none';
             if (adminNotice) adminNotice.style.display = 'none';
-            if (requestAdminContainer) requestAdminContainer.style.display = 'block';
+            if (requestAdminBtn) {
+                requestAdminBtn.style.display = 'flex';
+                console.log('Request button display set to flex');
+            }
         }
     }
 
@@ -1779,11 +1824,13 @@ class WatchTogetherApp {
         const userInfoCompact = document.getElementById('user-info-compact');
         if (!userInfoCompact) return;
 
-        const avatarText = this.appState.userData?.avatar || 
-                          this.appState.username?.substring(0, 2).toUpperCase() || 'GU';
+        const userAvatar = this.appState.userData?.avatar;
+        const avatarHtml = userAvatar ? 
+            `<div class="user-avatar-small" style="background-image: url('${userAvatar}'); background-size: cover; background-position: center;"></div>` :
+            `<div class="user-avatar-small">${this.appState.username?.substring(0, 2).toUpperCase() || 'GU'}</div>`;
 
         userInfoCompact.innerHTML = `
-            <div class="user-avatar-small">${avatarText}</div>
+            ${avatarHtml}
             <span class="user-name-small">${this.appState.username || 'Guest'}</span>
             ${this.appState.userData?.isAdmin ? '<span class="admin-badge-small">Admin</span>' : ''}
             <div style="display: flex; gap: 4px; align-items: center; margin-left: 6px;">

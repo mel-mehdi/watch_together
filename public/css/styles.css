@@ -168,7 +168,7 @@ body {
     position: relative;
     width: 100%;
     height: 0;
-    padding-bottom: 60%; /* 16:9 aspect ratio */
+    padding-bottom: 55%; /* 16:9 aspect ratio */
     background: var(--bg-card);
     border-radius: var(--radius-lg);
     overflow: hidden;
@@ -506,28 +506,9 @@ body {
     }
 }
 
-.request-admin-btn {
-    padding: 8px 10px;
-    background: var(--bg-card);
-    color: var(--text-primary);
-    border: 1px solid var(--border-color);
-    border-radius: var(--radius-md);
-    font-weight: 600;
-    font-size: 13px;
-    cursor: pointer;
-    transition: var(--transition-smooth);
-}
-
-.request-admin-btn:hover {
-    background: var(--primary-color);
-    border-color: var(--primary-color);
-    transform: translateY(-1px);
-    box-shadow: var(--shadow-md);
-}
-
-#request-admin-container {
-    text-align: center;
-    display: none;
+.header-btn.request-admin-btn:hover {
+    border-color: var(--warning-color);
+    color: var(--warning-color);
 }
 
 /* System Message Settings Toggles */
@@ -997,11 +978,82 @@ body {
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
     border: 2px solid rgba(255, 255, 255, 0.1);
     transition: var(--transition-smooth);
+    background-size: cover;
+    background-position: center;
+    background-repeat: no-repeat;
+    overflow: hidden;
+    position: relative;
 }
 
-.message-group:hover .avatar {
-    transform: scale(1.05);
-    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
+/* Avatar with Google profile image */
+.avatar-with-image {
+    font-size: 0 !important;
+    line-height: 0;
+    text-indent: -9999px;
+    color: transparent !important;
+}
+
+/* Hide the gradient overlay for image avatars */
+.avatar-with-image::before {
+    display: none !important;
+}
+
+/* Fallback for broken images */
+.avatar:before {
+    content: '';
+    position: absolute;
+    width: 100%;
+    height: 100%;
+    border-radius: 50%;
+    background: linear-gradient(135deg, var(--primary-color), var(--accent-color));
+    z-index: -1;
+}
+
+/* User avatar small styles */
+.user-avatar-small {
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, var(--primary-color), var(--accent-dark));
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: white;
+    font-size: 10px;
+    font-weight: 600;
+    flex-shrink: 0;
+    background-size: cover;
+    background-position: center;
+    background-repeat: no-repeat;
+    overflow: hidden;
+}
+
+/* User avatar small with image */
+.user-avatar-small[style*="background-image"] {
+    color: transparent;
+}
+
+/* Admin panel user avatar styles */
+.user-avatar {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, var(--primary-color), var(--accent-color));
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: white;
+    font-weight: 600;
+    font-size: 12px;
+    background-size: cover;
+    background-position: center;
+    background-repeat: no-repeat;
+    overflow: hidden;
+}
+
+/* Admin user avatar with image */
+.user-avatar[style*="background-image"] {
+    color: transparent;
 }
 
 /* Message Group Content */
@@ -1779,6 +1831,9 @@ body {
     font-size: 10px;
     font-weight: 600;
     flex-shrink: 0;
+    background-size: cover;
+    background-position: center;
+    background-repeat: no-repeat;
 }
 
 .user-name-small {
@@ -2731,7 +2786,7 @@ body {
 }
 
 .share-options {
-    border-top: 1px solid var(--border-color);
+    border-top:  1px solid var(--border-color);
     margin: 25px;
 }
 

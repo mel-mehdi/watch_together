@@ -376,7 +376,7 @@ router.post('/join/:inviteCode', async (req, res) => {
                 id: user._id,
                 username: user.username,
                 isGuest: user.isGuest,
-                avatar: user.getAvatarInitials ? user.getAvatarInitials() : user.username.charAt(0).toUpperCase()
+                avatar: user.avatar || ''
             }
         });
 

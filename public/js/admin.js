@@ -86,9 +86,12 @@ function initializeUI() {
 function updateAdminUserInfo() {
     const adminUserInfo = document.getElementById('admin-user-info');
     if (adminUserInfo && userData) {
-        const avatarText = (userData.avatar || userData.username || 'A').substring(0, 2).toUpperCase();
+        const avatarHtml = userData.avatar ? 
+            `<div class="user-avatar" style="background-image: url('${userData.avatar}'); background-size: cover; background-position: center;"></div>` :
+            `<div class="user-avatar">${(userData.username || 'A').substring(0, 2).toUpperCase()}</div>`;
+            
         adminUserInfo.innerHTML = `
-            <div class="user-avatar">${avatarText}</div>
+            ${avatarHtml}
             <div>
                 <div style="font-weight: 600; font-size: 12px;">${userData.username || 'Admin'}</div>
                 <div style="color: var(--text-muted); font-size: 10px;">Administrator</div>
@@ -358,7 +361,10 @@ async function loadUsersData() {
                     <tr>
                         <td>
                             <div class="user-info">
-                                <div class="user-avatar">${user.username.substring(0, 2).toUpperCase()}</div>
+                                ${user.avatar ? 
+                                    `<div class="user-avatar" style="background-image: url('${user.avatar}'); background-size: cover; background-position: center;"></div>` :
+                                    `<div class="user-avatar">${user.username.substring(0, 2).toUpperCase()}</div>`
+                                }
                                 <div>
                                     <div style="font-weight: 600;">${user.username}</div>
                                     <div style="color: var(--text-muted); font-size: 12px;">

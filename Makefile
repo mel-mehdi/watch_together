@@ -1,10 +1,9 @@
 # Watch Together - Simple Makefile
 
-IP := $(shell hostname -I | awk '{print $1}')
-IP := $(if $(IP),$(IP),172.21.103.111)
+IP := $(shell hostname -I | awk '{print $$1}')
 
 all:
-	@echo "http://$(IP):3000/"
+	@echo "http://$(IP):3000"
 	@npm start
 # Install dependencies
 install:

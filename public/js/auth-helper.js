@@ -63,7 +63,10 @@
             userInfo.innerHTML = `
                 <div class="user-menu">
                     <span class="username">
-                        <i class="fas fa-user-circle"></i>
+                        ${user.avatar ? 
+                            `<div style="width: 20px; height: 20px; border-radius: 50%; background-image: url('${user.avatar}'); background-size: cover; background-position: center; margin-right: 6px;"></div>` :
+                            `<i class="fas fa-user-circle"></i>`
+                        }
                         ${user.username}
                     </span>
                     <button class="logout-btn" id="logout-btn">
