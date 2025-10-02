@@ -215,14 +215,9 @@ class Utils {
 // ========================================
 class NotificationSystem {
     static show(message, type = 'info') {
-        // Notifications disabled - no popup notifications will be shown
-        console.log(`Notification (${type}): ${message}`);
+        console.log(`${type.toUpperCase()}: ${message}`);
     }
-
-    static initializeStyles() {
-        // Styles disabled - no notification styles needed
-        console.log('Notification styles disabled');
-    }
+    static initializeStyles() {}
 }
 
 // ========================================
@@ -299,31 +294,21 @@ class SocketManager {
 
     queueEvent(event, data) {
         this.eventQueue.push({ event, data });
-        console.log(`Queued event: ${event}, total queued: ${this.eventQueue.length}`);
     }
 
     processEventQueue() {
-        if (this.eventQueue && this.eventQueue.length > 0) {
-            console.log('Processing queued events:', this.eventQueue.length);
+        if (this.eventQueue?.length) {
             this.eventQueue.forEach(({ event, data }) => {
-                if (this.socket && this.socket.connected) {
-                    this.socket.emit(event, data);
-                }
+                this.socket?.connected && this.socket.emit(event, data);
             });
             this.eventQueue = [];
         }
     }
 
     waitForConnection() {
-        return new Promise((resolve) => {
-            if (this.socket && this.socket.connected) {
-                resolve();
-            } else if (this.socket) {
-                this.socket.once('connect', resolve);
-            } else {
-                // If no socket exists, resolve immediately (will be handled by emit method)
-                resolve();
-            }
+        return new Promise(resolve => {
+            if (this.socket?.connected) resolve();
+            else this.socket?.once('connect', resolve) || resolve();
         });
     }
 
@@ -336,17 +321,7 @@ class SocketManager {
     }
 
     disconnect() {
-        if (this.socket) {
-            this.socket.disconnect();
-        }
-    }
-
-    updateAuthToken(newToken) {
-        this.appState.authToken = newToken;
-        if (this.socket) {
-            this.socket.auth.token = newToken;
-            console.log('Socket auth token updated');
-        }
+        this.socket?.disconnect();
     }
 }
 
@@ -404,7 +379,6 @@ class VideoPlayerManager {
         }
 
         this.clearVideoErrorMessages();
-        
         const videoPlayer = this.dom.get('video-player');
         const directVideoPlayer = this.dom.get('direct-video-player');
         
@@ -412,19 +386,12 @@ class VideoPlayerManager {
         directVideoPlayer.style.display = 'none';
 
         const params = new URLSearchParams({
-            enablejsapi: '1',
-            origin: window.location.origin,
-            rel: '0',
-            autoplay: '0',
-            controls: '1',
-            modestbranding: '1',
-            playsinline: '1',
-            fs: '1',
-            iv_load_policy: '3'
+            enablejsapi: '1', origin: window.location.origin, rel: '0',
+            autoplay: '0', controls: '1', modestbranding: '1',
+            playsinline: '1', fs: '1', iv_load_policy: '3'
         });
 
-        const embedUrl = `https://www.youtube.com/embed/${videoId}?${params.toString()}`;
-        videoPlayer.src = embedUrl;
+        videoPlayer.src = `https://www.youtube.com/embed/${videoId}?${params}`;
         videoPlayer.allow = "accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share";
 
         this.setupYouTubeEventHandlers(videoPlayer, videoUrl);
@@ -432,31 +399,23 @@ class VideoPlayerManager {
 
     setupYouTubeEventHandlers(videoPlayer, videoUrl) {
         const onLoad = () => {
-            console.log("YouTube iframe loaded successfully");
+            console.log("YouTube iframe loaded");
             this.clearVideoErrorMessages();
             this.setupYouTubeSyncPlayer();
-            
-            if (this.appState.isAdmin) {
-                setTimeout(() => this.startAdminSync(), 2000);
-            }
+            if (this.appState.isAdmin) setTimeout(() => this.startAdminSync(), 2000);
         };
 
         const onError = () => {
             console.error("YouTube iframe load error");
             this.showUnsupportedVideoMessage(
-                'This YouTube video cannot be embedded due to copyright or privacy restrictions. You can try downloading the video and using a direct MP4 link instead.'
+                'This YouTube video cannot be embedded due to restrictions. Try downloading and using a direct MP4 link.'
             );
         };
 
         videoPlayer.onload = onLoad;
         videoPlayer.onerror = onError;
-
-        // Fallback timeout
         setTimeout(() => {
-            if (videoPlayer.src.includes('youtube.com') && !this.player) {
-                console.log("YouTube iframe fallback setup");
-                onLoad();
-            }
+            if (videoPlayer.src.includes('youtube.com') && !this.player) onLoad();
         }, CONFIG.YOUTUBE_API_TIMEOUT);
     }
 
@@ -468,66 +427,49 @@ class VideoPlayerManager {
             lastKnownTime: 0,
             initialized: true,
 
-            getCurrentTime: () => {
-                return new Promise((resolve) => {
-                    try {
-                        if (videoPlayer?.contentWindow) {
-                            videoPlayer.contentWindow.postMessage(JSON.stringify({
-                                event: 'command',
-                                func: 'getCurrentTime'
-                            }), '*');
-                            setTimeout(() => resolve(this.player.lastKnownTime || 0), 100);
-                        } else {
-                            resolve(this.player.lastKnownTime || 0);
-                        }
-                    } catch (error) {
-                        resolve(this.player.lastKnownTime || 0);
-                    }
-                });
-            },
+            getCurrentTime: () => new Promise(resolve => {
+                try {
+                    videoPlayer?.contentWindow?.postMessage(JSON.stringify({
+                        event: 'command', func: 'getCurrentTime'
+                    }), '*');
+                    setTimeout(() => resolve(this.player.lastKnownTime || 0), 100);
+                } catch (error) {
+                    resolve(this.player.lastKnownTime || 0);
+                }
+            }),
 
             getPlayerState: () => Promise.resolve(this.player.playerState),
 
             seekTo: (time) => {
                 try {
-                    if (videoPlayer?.contentWindow) {
-                        videoPlayer.contentWindow.postMessage(JSON.stringify({
-                            event: 'command',
-                            func: 'seekTo',
-                            args: [time, true]
-                        }), '*');
-                        this.player.lastKnownTime = time;
-                    }
+                    videoPlayer?.contentWindow?.postMessage(JSON.stringify({
+                        event: 'command', func: 'seekTo', args: [time, true]
+                    }), '*');
+                    this.player.lastKnownTime = time;
                 } catch (error) {
-                    console.error("Error seeking YouTube video:", error);
+                    console.error("Error seeking:", error);
                 }
             },
 
             playVideo: () => {
                 try {
-                    if (videoPlayer?.contentWindow) {
-                        videoPlayer.contentWindow.postMessage(JSON.stringify({
-                            event: 'command',
-                            func: 'playVideo'
-                        }), '*');
-                        this.player.playerState = PLAYER_STATES.PLAYING;
-                    }
+                    videoPlayer?.contentWindow?.postMessage(JSON.stringify({
+                        event: 'command', func: 'playVideo'
+                    }), '*');
+                    this.player.playerState = PLAYER_STATES.PLAYING;
                 } catch (error) {
-                    console.error("Error playing YouTube video:", error);
+                    console.error("Error playing:", error);
                 }
             },
 
             pauseVideo: () => {
                 try {
-                    if (videoPlayer?.contentWindow) {
-                        videoPlayer.contentWindow.postMessage(JSON.stringify({
-                            event: 'command',
-                            func: 'pauseVideo'
-                        }), '*');
-                        this.player.playerState = PLAYER_STATES.PAUSED;
-                    }
+                    videoPlayer?.contentWindow?.postMessage(JSON.stringify({
+                        event: 'command', func: 'pauseVideo'
+                    }), '*');
+                    this.player.playerState = PLAYER_STATES.PAUSED;
                 } catch (error) {
-                    console.error("Error pausing YouTube video:", error);
+                    console.error("Error pausing:", error);
                 }
             }
         };
@@ -539,14 +481,12 @@ class VideoPlayerManager {
         
         videoPlayer.style.display = 'none';
         directVideoPlayer.style.display = 'block';
-
         this.clearVideoErrorMessages();
 
         const sourceElement = directVideoPlayer.querySelector('source') || 
                             this.createSourceElement(directVideoPlayer, videoUrl);
         sourceElement.src = videoUrl;
         directVideoPlayer.load();
-
         this.setupDirectVideoEventHandlers(directVideoPlayer);
     }
 
@@ -562,67 +502,55 @@ class VideoPlayerManager {
         this.player = {
             playerState: PLAYER_STATES.PAUSED,
             lastKnownTime: 0,
-
             getCurrentTime: () => Promise.resolve(directVideoPlayer.currentTime || 0),
             getPlayerState: () => Promise.resolve(directVideoPlayer.paused ? PLAYER_STATES.PAUSED : PLAYER_STATES.PLAYING),
-            
             seekTo: (time) => {
                 if (directVideoPlayer.duration && time <= directVideoPlayer.duration) {
                     directVideoPlayer.currentTime = time;
                     this.player.lastKnownTime = time;
                 }
             },
-
             playVideo: () => {
-                const playPromise = directVideoPlayer.play();
-                if (playPromise) {
-                    playPromise.then(() => {
-                        this.player.playerState = PLAYER_STATES.PLAYING;
-                    }).catch(console.error);
-                }
+                directVideoPlayer.play()?.then(() => {
+                    this.player.playerState = PLAYER_STATES.PLAYING;
+                }).catch(console.error);
             },
-
             pauseVideo: () => {
                 directVideoPlayer.pause();
                 this.player.playerState = PLAYER_STATES.PAUSED;
             }
         };
 
-        // Event listeners with throttling
+        const emitIfAdmin = (event, data) => {
+            if (this.appState.isAdmin && !this.appState.ignoreEvents) {
+                this.socket.emit(event, data);
+            }
+        };
+
         directVideoPlayer.addEventListener('play', Utils.throttle(() => {
             this.player.playerState = PLAYER_STATES.PLAYING;
-            if (this.appState.isAdmin && !this.appState.ignoreEvents) {
-                this.socket.emit('video play', directVideoPlayer.currentTime);
-                this.socket.emit('admin action', 'play');
-            }
+            emitIfAdmin('video play', directVideoPlayer.currentTime);
+            emitIfAdmin('admin action', 'play');
         }, 100));
 
         directVideoPlayer.addEventListener('pause', Utils.throttle(() => {
             this.player.playerState = PLAYER_STATES.PAUSED;
-            if (this.appState.isAdmin && !this.appState.ignoreEvents) {
-                this.socket.emit('video pause', directVideoPlayer.currentTime);
-                this.socket.emit('admin action', 'pause');
-            }
+            emitIfAdmin('video pause', directVideoPlayer.currentTime);
+            emitIfAdmin('admin action', 'pause');
         }, 100));
 
         directVideoPlayer.addEventListener('seeked', Utils.throttle(() => {
             this.player.lastKnownTime = directVideoPlayer.currentTime;
-            if (this.appState.isAdmin && !this.appState.ignoreEvents) {
-                this.socket.emit('video seek', directVideoPlayer.currentTime);
-            }
+            emitIfAdmin('video seek', directVideoPlayer.currentTime);
         }, 100));
 
         directVideoPlayer.addEventListener('loadedmetadata', () => {
-            console.log("Video metadata loaded, duration:", directVideoPlayer.duration);
+            console.log("Video loaded, duration:", directVideoPlayer.duration);
             this.clearVideoErrorMessages();
-            if (this.appState.isAdmin) {
-                setTimeout(() => this.startAdminSync(), 1000);
-            }
+            if (this.appState.isAdmin) setTimeout(() => this.startAdminSync(), 1000);
         });
 
-        directVideoPlayer.addEventListener('error', (e) => {
-            this.handleVideoError(e.target.error);
-        });
+        directVideoPlayer.addEventListener('error', (e) => this.handleVideoError(e.target.error));
     }
 
     handleVideoError(error) {
@@ -643,14 +571,7 @@ class VideoPlayerManager {
 
     updateVideoContainerState(hasVideo) {
         const videoContainer = document.querySelector('.video-container');
-        if (videoContainer) {
-            if (hasVideo) {
-                videoContainer.classList.add('has-video');
-            } else {
-                videoContainer.classList.remove('has-video');
-            }
-        }
-        console.log("Video container state:", hasVideo ? "active" : "inactive");
+        videoContainer?.classList.toggle('has-video', hasVideo);
     }
 
     showVideoLoadingMessage(message) {
@@ -751,23 +672,20 @@ class VoiceChatManager {
 
     initialize() {
         this.toggleBtn = this.dom.get('voice-chat-toggle');
-        console.log('Voice chat initialize - toggleBtn found:', !!this.toggleBtn, this.toggleBtn);
         this.setupEventListeners();
     }
 
     setupEventListeners() {
-        if (this.toggleBtn) {
-            this.toggleBtn.addEventListener('click', () => {
-                this.isInVoiceRoom ? this.leaveVoiceRoom() : this.joinVoiceRoom();
-            });
+        if (!this.toggleBtn) return;
+        
+        this.toggleBtn.addEventListener('click', () => {
+            this.isInVoiceRoom ? this.leaveVoiceRoom() : this.joinVoiceRoom();
+        });
 
-            this.toggleBtn.addEventListener('dblclick', (e) => {
-                e.preventDefault();
-                if (this.isInVoiceRoom) {
-                    this.toggleMicrophone();
-                }
-            });
-        }
+        this.toggleBtn.addEventListener('dblclick', (e) => {
+            e.preventDefault();
+            if (this.isInVoiceRoom) this.toggleMicrophone();
+        });
     }
 
     async joinVoiceRoom() {
@@ -840,45 +758,29 @@ class VoiceChatManager {
     }
 
     updateButtonState() {
-        console.log('Voice chat updateButtonState called - isInVoiceRoom:', this.isInVoiceRoom, 'isMicEnabled:', this.isMicEnabled);
-        
-        if (!this.toggleBtn) {
-            console.warn('Voice chat toggle button not found!');
-            return;
-        }
+        if (!this.toggleBtn) return;
 
-        // Add state-changing class for transition effect
         this.toggleBtn.classList.add('state-changing');
         
         setTimeout(() => {
             if (this.isInVoiceRoom) {
                 this.toggleBtn.classList.add('active');
                 if (this.isMicEnabled) {
-                    // Speaking mode - green microphone
                     this.toggleBtn.innerHTML = '<i class="fas fa-microphone"></i>';
-                    this.toggleBtn.title = 'Speaking enabled (Click to leave, Double-click to mute)';
+                    this.toggleBtn.title = 'Speaking (Click: leave, Double-click: mute)';
                     this.toggleBtn.style.background = 'var(--success-color)';
-                    console.log('Set voice chat to SPEAKING mode (green microphone)');
                 } else {
-                    // Listening mode - cyan headphones
                     this.toggleBtn.innerHTML = '<i class="fas fa-headphones"></i>';
-                    this.toggleBtn.title = 'Listening only (Click to leave, Double-click to speak)';
+                    this.toggleBtn.title = 'Listening (Click: leave, Double-click: speak)';
                     this.toggleBtn.style.background = 'var(--accent-color)';
-                    console.log('Set voice chat to LISTENING mode (cyan headphones)');
                 }
             } else {
-                // Inactive mode - gray microphone
                 this.toggleBtn.classList.remove('active');
                 this.toggleBtn.innerHTML = '<i class="fas fa-microphone"></i>';
                 this.toggleBtn.title = 'Join voice chat';
                 this.toggleBtn.style.background = '';
-                console.log('Set voice chat to INACTIVE mode (gray microphone)');
             }
-            
-            // Remove state-changing class after transition
-            setTimeout(() => {
-                this.toggleBtn.classList.remove('state-changing');
-            }, 150);
+            setTimeout(() => this.toggleBtn.classList.remove('state-changing'), 150);
         }, 150);
     }
 
@@ -952,24 +854,16 @@ class WatchTogetherApp {
     async initialize() {
         console.log('🚀 Initializing Watch Together App');
         
-        // Initialize core systems
         NotificationSystem.initializeStyles();
         this.socket = this.socketManager.initialize();
-        
-        // Initialize managers
         this.videoPlayer = new VideoPlayerManager(this.appState, this.domCache, this.socketManager);
         this.voiceChat = new VoiceChatManager(this.appState, this.domCache, this.socketManager);
         
-        // Setup application
         this.setupEventHandlers();
         this.setupSocketEvents();
         await this.initializeAuth();
         this.initializeUI();
-        
-        // Initialize chat features
         this.initializeChatFeatures();
-        
-        // Initialize subsystems
         this.voiceChat.initialize();
         
         console.log('✅ App initialization complete');
@@ -1019,29 +913,14 @@ class WatchTogetherApp {
         const acceptAdminBtn = this.domCache.get('accept-admin-request');
         const rejectAdminBtn = this.domCache.get('reject-admin-request');
 
-        console.log('Setting up admin controls, requestAdminBtn:', requestAdminBtn);
-
         if (requestAdminBtn) {
-            console.log('Button display style:', requestAdminBtn.style.display);
-            console.log('Button visible:', requestAdminBtn.offsetWidth > 0 && requestAdminBtn.offsetHeight > 0);
-            
             requestAdminBtn.addEventListener('click', (e) => {
                 e.preventDefault();
-                console.log('Request admin button clicked!');
-                console.log('Current admin user:', this.appState.currentAdminUser);
-                console.log('Is admin:', this.appState.isAdmin);
-                
-                if (this.appState.isAdmin) {
-                    console.log('User is already admin, not sending request');
-                    return;
+                if (!this.appState.isAdmin) {
+                    this.socketManager.emit('request admin');
+                    NotificationSystem.show(`Request sent to ${this.appState.currentAdminUser || 'admin'}`, 'info');
                 }
-                
-                this.socketManager.emit('request admin');
-                NotificationSystem.show(`Request sent to ${this.appState.currentAdminUser || 'admin'} to become admin`, 'info');
             });
-            console.log('Admin request event listener attached successfully');
-        } else {
-            console.warn('Request admin button not found in DOM cache');
         }
 
         if (acceptAdminBtn) {
@@ -1091,12 +970,7 @@ class WatchTogetherApp {
         this.socketManager.on('admin status', (status) => {
             this.appState.isAdmin = status;
             this.updateAdminUI();
-            
-            if (status) {
-                this.videoPlayer.startAdminSync();
-            } else {
-                this.videoPlayer.stopAdminSync();
-            }
+            status ? this.videoPlayer.startAdminSync() : this.videoPlayer.stopAdminSync();
         });
 
         this.socketManager.on('admin user', (adminUsername) => {
@@ -1104,9 +978,7 @@ class WatchTogetherApp {
             this.updateAdminUI();
         });
 
-        // Admin request events
         this.socketManager.on('admin request', (requestingUsername, requestingUserId) => {
-            console.log('Received admin request from:', requestingUsername, 'ID:', requestingUserId);
             this.showAdminRequestModal(requestingUsername, requestingUserId);
         });
 
@@ -1128,25 +1000,19 @@ class WatchTogetherApp {
         // Video control events
         this.socketManager.on('video play', (data) => {
             if (!this.videoPlayer.player) return;
-            
             const time = typeof data === 'object' ? data.time : data;
             this.appState.ignoreEvents = true;
-            
             this.videoPlayer.player.seekTo(time);
             this.videoPlayer.player.playVideo();
-            
             setTimeout(() => { this.appState.ignoreEvents = false; }, 500);
         });
 
         this.socketManager.on('video pause', (data) => {
             if (!this.videoPlayer.player) return;
-            
             const time = typeof data === 'object' ? data.time : data;
             this.appState.ignoreEvents = true;
-            
             this.videoPlayer.player.seekTo(time);
             this.videoPlayer.player.pauseVideo();
-            
             setTimeout(() => { this.appState.ignoreEvents = false; }, 500);
         });
 
@@ -1159,20 +1025,14 @@ class WatchTogetherApp {
             }
         });
 
-        // Chat events
+        // Chat & system events
         this.socketManager.on('chat message', (msg) => this.handleChatMessage(msg));
         this.socketManager.on('recent messages', (messageHistory) => this.handleRecentMessages(messageHistory));
         this.socketManager.on('system message', (msg) => this.handleSystemMessage(msg));
         this.socketManager.on('error message', (msg) => NotificationSystem.show(msg, 'error'));
-
-        // User count events
         this.socketManager.on('user count', (count) => this.updateOnlineUsersCount(count));
         this.socketManager.on('user list', (users) => this.updateOnlineUsersCount(users.length));
-
-        // Video history events
         this.socketManager.on('video history', (history) => this.displayVideoHistory(history));
-
-        // System message configuration events
         this.socketManager.on('system message config', (config) => this.updateSystemMessageConfig(config));
 
         // Voice chat events
@@ -1470,54 +1330,30 @@ class WatchTogetherApp {
         const messages = this.domCache.get('messages');
         if (!messages) return;
 
-        // Debug: log the message data
-        console.log('📨 Chat message received:', {
-            username: msg.username,
-            avatar: msg.avatar ? `${msg.avatar.substring(0, 50)}...` : 'No avatar',
-            hasAvatar: !!msg.avatar
-        });
-
-        // Handle timestamp properly - use current time if timestamp is invalid or missing
         let timeString;
         try {
             const timestamp = msg.timestamp || Date.now();
             const date = new Date(timestamp);
-            if (isNaN(date.getTime())) {
-                // If timestamp is invalid, use current time
-                timeString = new Date().toLocaleTimeString();
-            } else {
-                timeString = date.toLocaleTimeString();
-            }
-        } catch (error) {
-            // Fallback to current time if any error occurs
+            timeString = isNaN(date.getTime()) ? new Date().toLocaleTimeString() : date.toLocaleTimeString();
+        } catch {
             timeString = new Date().toLocaleTimeString();
         }
 
-        // Determine if message is sent by current user
         const isSentByCurrentUser = msg.username === this.appState.username;
-        
-        // Check if we should group with the previous message
         const lastMessage = messages.lastElementChild;
         const shouldGroup = this.shouldGroupMessages(lastMessage, msg.username, isSentByCurrentUser);
         
-        if (shouldGroup) {
-            // Add to existing message group
-            this.addToMessageGroup(lastMessage, msg.message, timeString);
-        } else {
-            // Create new message group
+        shouldGroup ? 
+            this.addToMessageGroup(lastMessage, msg.message, timeString) :
             this.createNewMessageGroup(messages, msg, isSentByCurrentUser, timeString);
-        }
 
         messages.scrollTop = messages.scrollHeight;
     }
 
     shouldGroupMessages(lastMessage, username, isSentByCurrentUser) {
         if (!lastMessage || lastMessage.classList.contains('system-message')) return false;
-        
         const lastUsername = lastMessage.dataset.username;
         const timeDiff = Date.now() - parseInt(lastMessage.dataset.timestamp);
-        
-        // Group messages from same user within 2 minutes
         return lastUsername === username && timeDiff < 120000;
     }
 
@@ -1537,8 +1373,6 @@ class WatchTogetherApp {
             </div>
         `;
         messagesContainer.appendChild(newBubble);
-        
-        // Update timestamp
         messageGroup.dataset.timestamp = Date.now().toString();
     }
 
@@ -1576,12 +1410,10 @@ class WatchTogetherApp {
     }
 
     generateAvatar(username, avatarUrl = null) {
-        // If avatar URL is provided, use it as background image
-        if (avatarUrl && avatarUrl.trim()) {
+        if (avatarUrl?.trim()) {
             return `<div class="avatar avatar-with-image" style="background-image: url('${avatarUrl}');" title="${username}"></div>`;
         }
         
-        // Generate consistent avatar based on username
         const colors = [
             'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
             'linear-gradient(135deg, #f093fb 0%, #f5576c 100%)',
@@ -1593,7 +1425,6 @@ class WatchTogetherApp {
             'linear-gradient(135deg, #ffecd2 0%, #fcb69f 100%)'
         ];
         
-        // Create consistent hash for username
         let hash = 0;
         for (let i = 0; i < username.length; i++) {
             hash = username.charCodeAt(i) + ((hash << 5) - hash);
@@ -1801,22 +1632,14 @@ class WatchTogetherApp {
         const adminNotice = this.domCache.get('admin-notice');
         const requestAdminBtn = this.domCache.get('request-admin');
 
-        console.log('updateAdminUI called - isAdmin:', this.appState.isAdmin);
-        console.log('requestAdminBtn found:', !!requestAdminBtn);
-
         if (this.appState.isAdmin) {
-            console.log('User is admin - hiding request button');
-            if (adminControls) adminControls.style.display = 'block';
-            if (adminNotice) adminNotice.style.display = 'block';
-            if (requestAdminBtn) requestAdminBtn.style.display = 'none';
+            adminControls?.style && (adminControls.style.display = 'block');
+            adminNotice?.style && (adminNotice.style.display = 'block');
+            requestAdminBtn?.style && (requestAdminBtn.style.display = 'none');
         } else {
-            console.log('User is not admin - showing request button');
-            if (adminControls) adminControls.style.display = 'none';
-            if (adminNotice) adminNotice.style.display = 'none';
-            if (requestAdminBtn) {
-                requestAdminBtn.style.display = 'flex';
-                console.log('Request button display set to flex');
-            }
+            adminControls?.style && (adminControls.style.display = 'none');
+            adminNotice?.style && (adminNotice.style.display = 'none');
+            requestAdminBtn?.style && (requestAdminBtn.style.display = 'flex');
         }
     }
 
@@ -1933,6 +1756,20 @@ class WatchTogetherApp {
         }
     }
 
+    showAdminRequestModal(requestingUsername, requestingUserId) {
+        this.appState.requestingUserId = requestingUserId;
+        
+        const modal = this.domCache.get('admin-request-modal');
+        const requestText = document.getElementById('admin-request-message');
+        
+        if (requestText) {
+            requestText.textContent = `${requestingUsername} wants to become the admin`;
+        }
+        
+        if (modal) {
+            modal.style.display = 'flex';
+        }
+    }
 
     updateRoomSettings() {
         const roomCodeDisplay = document.getElementById('room-code-display');
