@@ -708,6 +708,9 @@ io.on('connection', async (socket) => {
         
         const currentAdmin = roomAdmins.get(user.roomId);
         if (socket.id === currentAdmin && users[targetSocketId] && users[targetSocketId].roomId === user.roomId) {
+            console.log(`🔄 [Admin Transfer] From ${socket.id} to ${targetSocketId}`);
+            console.log(`🔄 [Admin Transfer] Previous admin: ${users[currentAdmin].username}, New admin: ${users[targetSocketId].username}`);
+            
             // Transfer admin status
             users[currentAdmin].isAdmin = false;
             roomAdmins.set(user.roomId, targetSocketId);
@@ -717,7 +720,12 @@ io.on('connection', async (socket) => {
             io.to(user.roomId).emit('admin user', users[targetSocketId].username);
             sendSystemMessage(user.roomId, `${users[targetSocketId].username} is now the admin controller`, 'admin-change');
             
+            // Notify the old admin that they lost admin status
+            console.log(`🔄 [Admin Transfer] Emitting 'admin status: false' to ${currentAdmin}`);
+            io.to(currentAdmin).emit('admin status', false);
+            
             // Notify the new admin
+            console.log(`🔄 [Admin Transfer] Emitting 'admin status: true' to ${targetSocketId}`);
             io.to(targetSocketId).emit('admin status', true);
         }
     });

@@ -925,14 +925,18 @@ class WatchTogetherApp {
 
         if (acceptAdminBtn) {
             acceptAdminBtn.addEventListener('click', () => {
+                const modal = this.domCache.get('admin-request-modal');
                 this.socketManager.emit('transfer admin', this.appState.requestingUserId);
-                this.domCache.get('admin-request-modal').style.display = 'none';
+                if (modal) modal.style.display = 'none';
+                NotificationSystem.show('Admin privileges transferred', 'success');
             });
         }
 
         if (rejectAdminBtn) {
             rejectAdminBtn.addEventListener('click', () => {
-                this.domCache.get('admin-request-modal').style.display = 'none';
+                const modal = this.domCache.get('admin-request-modal');
+                if (modal) modal.style.display = 'none';
+                NotificationSystem.show('Admin request declined', 'info');
             });
         }
     }
@@ -968,8 +972,24 @@ class WatchTogetherApp {
     setupSocketEvents() {
         // Admin events
         this.socketManager.on('admin status', (status) => {
+            console.log('🎯 [admin status] Event received:', status);
+            console.log('🎯 [admin status] Before update - isAdmin:', this.appState.isAdmin);
+            
+            const wasAdmin = this.appState.isAdmin;
             this.appState.isAdmin = status;
+            
+            console.log('🎯 [admin status] After update - isAdmin:', this.appState.isAdmin);
+            console.log('🎯 [admin status] wasAdmin:', wasAdmin, '-> newStatus:', status);
+            
             this.updateAdminUI();
+            
+            // Show notification when gaining/losing admin
+            if (status && !wasAdmin) {
+                NotificationSystem.show('You are now the admin!', 'success');
+            } else if (!status && wasAdmin) {
+                NotificationSystem.show('Admin privileges transferred', 'info');
+            }
+            
             status ? this.videoPlayer.startAdminSync() : this.videoPlayer.stopAdminSync();
         });
 
@@ -1208,6 +1228,8 @@ class WatchTogetherApp {
         this.updateUserInterface();
         this.setupModalHandlers();
         this.ensureModalsAreHidden();
+        // Initialize admin UI state
+        this.updateAdminUI();
     }
 
     ensureModalsAreHidden() {
@@ -1217,8 +1239,8 @@ class WatchTogetherApp {
             const modal = this.domCache.get(modalId);
             if (modal) {
                 modal.classList.remove('active');
-                // For username modal, also set style.display = 'none' as it uses different styling
-                if (modalId === 'username-modal') {
+                // For modals that use style.display instead of active class
+                if (modalId === 'username-modal' || modalId === 'admin-request-modal') {
                     modal.style.display = 'none';
                 }
             }
@@ -1632,14 +1654,36 @@ class WatchTogetherApp {
         const adminNotice = this.domCache.get('admin-notice');
         const requestAdminBtn = this.domCache.get('request-admin');
 
+        console.log('🔧 updateAdminUI called:', {
+            isAdmin: this.appState.isAdmin,
+            buttonFound: !!requestAdminBtn,
+            buttonId: requestAdminBtn?.id,
+            currentDisplay: requestAdminBtn?.style.display,
+            computedDisplay: requestAdminBtn ? window.getComputedStyle(requestAdminBtn).display : 'N/A'
+        });
+
         if (this.appState.isAdmin) {
-            adminControls?.style && (adminControls.style.display = 'block');
-            adminNotice?.style && (adminNotice.style.display = 'block');
-            requestAdminBtn?.style && (requestAdminBtn.style.display = 'none');
+            // User is admin - hide request button, show admin controls
+            console.log('👑 User IS admin - hiding request button');
+            if (adminControls?.style) adminControls.style.display = 'block';
+            if (adminNotice?.style) adminNotice.style.display = 'block';
+            if (requestAdminBtn) {
+                requestAdminBtn.style.setProperty('display', 'none', 'important');
+                console.log('✅ Request button display set to:', requestAdminBtn.style.display);
+            } else {
+                console.warn('⚠️ Request admin button not found in DOM!');
+            }
         } else {
-            adminControls?.style && (adminControls.style.display = 'none');
-            adminNotice?.style && (adminNotice.style.display = 'none');
-            requestAdminBtn?.style && (requestAdminBtn.style.display = 'flex');
+            // User is not admin - show request button, hide admin controls
+            console.log('👤 User is NOT admin - showing request button');
+            if (adminControls?.style) adminControls.style.display = 'none';
+            if (adminNotice?.style) adminNotice.style.display = 'none';
+            if (requestAdminBtn) {
+                requestAdminBtn.style.setProperty('display', 'flex', 'important');
+                console.log('✅ Request button display set to:', requestAdminBtn.style.display);
+            } else {
+                console.warn('⚠️ Request admin button not found in DOM!');
+            }
         }
     }
 

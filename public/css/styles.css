@@ -506,6 +506,10 @@ body {
     }
 }
 
+.header-btn.request-admin-btn {
+    display: flex;
+}
+
 .header-btn.request-admin-btn:hover {
     border-color: var(--warning-color);
     color: var(--warning-color);
