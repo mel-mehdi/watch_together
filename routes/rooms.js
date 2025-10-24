@@ -6,6 +6,21 @@ const Message = require('../models/Message');
 const VideoHistory = require('../models/VideoHistory');
 const router = express.Router();
 
+// Middleware to check database connection
+const checkDatabaseConnection = (req, res, next) => {
+    const mongoose = require('mongoose');
+    if (mongoose.connection.readyState !== 1) {
+        return res.status(503).json({
+            success: false,
+            message: 'Database is not available. Please try again later.'
+        });
+    }
+    next();
+};
+
+// Apply database check to all routes
+router.use(checkDatabaseConnection);
+
 // Create a new room
 router.post('/create', async (req, res) => {
     try {

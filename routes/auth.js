@@ -7,6 +7,18 @@ const passport = require('passport');
 const User = require('../models/User');
 const router = express.Router();
 
+// Middleware to check database connection for routes that require it
+const checkDatabaseConnection = (req, res, next) => {
+    const mongoose = require('mongoose');
+    if (mongoose.connection.readyState !== 1) {
+        return res.status(503).json({
+            success: false,
+            error: 'Database is not available. Please try again later.'
+        });
+    }
+    next();
+};
+
 // Configure nodemailer (email credentials are optional for development)
 let transporter = null;
 
@@ -39,7 +51,7 @@ if (process.env.EMAIL_HOST && process.env.EMAIL_USER && process.env.EMAIL_PASS) 
 }
 
 // Register new user
-router.post('/register', async (req, res) => {
+router.post('/register', checkDatabaseConnection, async (req, res) => {
     try {
         const { username, email, password } = req.body;
 
@@ -120,7 +132,7 @@ router.post('/register', async (req, res) => {
 });
 
 // Login user
-router.post('/login', async (req, res) => {
+router.post('/login', checkDatabaseConnection, async (req, res) => {
     try {
         const { usernameOrEmail, password } = req.body;
 
@@ -185,7 +197,7 @@ router.post('/login', async (req, res) => {
 });
 
 // Get current user profile
-router.get('/me', async (req, res) => {
+router.get('/me', checkDatabaseConnection, async (req, res) => {
     try {
         const token = req.headers.authorization?.replace('Bearer ', '');
         
@@ -220,7 +232,7 @@ router.get('/me', async (req, res) => {
 });
 
 // Verify token endpoint
-router.post('/verify-token', async (req, res) => {
+router.post('/verify-token', checkDatabaseConnection, async (req, res) => {
     try {
         const { token } = req.body;
         
@@ -263,7 +275,7 @@ router.post('/verify-token', async (req, res) => {
 });
 
 // Refresh token
-router.post('/refresh-token', async (req, res) => {
+router.post('/refresh-token', checkDatabaseConnection, async (req, res) => {
     try {
         const { token } = req.body;
         
@@ -394,7 +406,7 @@ if (process.env.GOOGLE_CLIENT_ID &&
 }
 
 // Forgot password
-router.post('/forgot-password', async (req, res) => {
+router.post('/forgot-password', checkDatabaseConnection, async (req, res) => {
     try {
         const { usernameOrEmail } = req.body;
 
@@ -496,7 +508,7 @@ router.post('/forgot-password', async (req, res) => {
 });
 
 // Reset password with token
-router.post('/reset-password', async (req, res) => {
+router.post('/reset-password', checkDatabaseConnection, async (req, res) => {
     try {
         const { token, newPassword } = req.body;
 
@@ -548,7 +560,7 @@ router.post('/reset-password', async (req, res) => {
 });
 
 // Development endpoint to create/promote admin user (remove in production)
-router.post('/make-admin', async (req, res) => {
+router.post('/make-admin', checkDatabaseConnection, async (req, res) => {
     try {
         const { username, password } = req.body;
         
