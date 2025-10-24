@@ -322,12 +322,13 @@ if (process.env.GOOGLE_CLIENT_ID &&
     router.get('/google', (req, res, next) => {
         // Check if Google strategy is registered with Passport
         try {
-            if (!passport._strategy('google')) {
+            const strategy = passport._strategies && passport._strategies['google'];
+            if (!strategy) {
                 console.log('Google OAuth strategy not available (database may not be connected)');
                 return res.redirect('/login.html?error=google_unavailable');
             }
         } catch (err) {
-            console.log('Google OAuth strategy not available (database may not be connected)');
+            console.log('Google OAuth strategy check failed:', err.message);
             return res.redirect('/login.html?error=google_unavailable');
         }
         
@@ -337,12 +338,13 @@ if (process.env.GOOGLE_CLIENT_ID &&
     router.get('/google/callback', (req, res, next) => {
         // Check if Google strategy is registered with Passport
         try {
-            if (!passport._strategy('google')) {
+            const strategy = passport._strategies && passport._strategies['google'];
+            if (!strategy) {
                 console.log('Google OAuth callback attempted but strategy not available');
                 return res.redirect('/login.html?error=google_unavailable');
             }
         } catch (err) {
-            console.log('Google OAuth callback attempted but strategy not available');
+            console.log('Google OAuth callback strategy check failed:', err.message);
             return res.redirect('/login.html?error=google_unavailable');
         }
         

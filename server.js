@@ -69,8 +69,8 @@ function configurePassport(withDatabase = true) {
               // Ensure database is connected before proceeding
               const mongoose = require('mongoose');
               if (!isDatabaseConnected || mongoose.connection.readyState !== 1) {
-                console.error('Database not ready for authentication');
-                return done(new Error('Database connection not available'), null);
+                console.error('Database not ready for Google authentication');
+                return done(null, false, { message: 'Database not available. Please try again later.' });
               }
               
               // Check if user already exists with this Google ID
@@ -121,17 +121,21 @@ function configurePassport(withDatabase = true) {
 
         passport.deserializeUser(async (id, done) => {
           try {
-            // Ensure database is connected before proceeding
+            // Check if database is available
             const mongoose = require('mongoose');
             if (!isDatabaseConnected || mongoose.connection.readyState !== 1) {
-              console.error('Database not ready for user deserialization');
-              return done(new Error('Database connection not available'), null);
+              console.warn('Database not ready for user deserialization, skipping');
+              return done(null, false); // Return false instead of error to prevent 500
             }
             
             const user = await User.findById(id);
+            if (!user) {
+              return done(null, false);
+            }
             done(null, user);
           } catch (error) {
-            done(error, null);
+            console.error('User deserialization error:', error.message);
+            done(null, false); // Don't fail the request, just skip user session
           }
         });
     } else {
