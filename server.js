@@ -15,31 +15,11 @@ dotenv.config();
 // Flag for database availability
 let isDatabaseConnected = false;
 
-// Connect to database with fallback
-try {
-  connectDB()
-    .then(() => {
-      console.log("Database connected successfully");
-      isDatabaseConnected = true;
-    })
-    .catch(err => {
-      console.error("Database connection failed, running in memory-only mode:", err.message);
-      isDatabaseConnected = false;
-    });
-} catch (error) {
-  console.error("Database connection failed, running in memory-only mode:", error.message);
-  isDatabaseConnected = false;
-}
-
-// Import models
+// Import models (but don't use them until DB is connected)
 const User = require('./models/User');
 const Room = require('./models/Room');
 const Message = require('./models/Message');
 const VideoHistory = require('./models/VideoHistory');
-
-// Import routes
-const authRoutes = require('./routes/auth');
-const roomRoutes = require('./routes/rooms');
 
 const app = express();
 const server = http.createServer(app);
@@ -49,8 +29,6 @@ const io = new Server(server, {
         methods: ["GET", "POST"]
     }
 });
-
-const adminRoutes = require('./routes/admin')(io);
 
 app.use(express.json());
 
@@ -66,96 +44,140 @@ app.use((req, res, next) => {
     next();
 });
 
-// Session configuration
-app.use(session({
-    secret: process.env.SESSION_SECRET || 'fallback-session-secret',
-    resave: false,
-    saveUninitialized: false,
-    store: isDatabaseConnected ? MongoStore.create({
-        mongoUrl: process.env.MONGO_URI
-    }) : undefined, // Use memory store if no database
-    cookie: {
-        secure: false, // Set to true if using HTTPS
-        httpOnly: true,
-        maxAge: 1000 * 60 * 60 * 24 * 7 // 7 days
+// Function to configure Passport after DB connection
+function configurePassport() {
+    // Passport configuration
+    app.use(passport.initialize());
+    app.use(passport.session());
+
+    // Google OAuth Strategy - only configure if credentials are properly set
+    if (process.env.GOOGLE_CLIENT_ID && 
+        process.env.GOOGLE_CLIENT_SECRET && 
+        process.env.GOOGLE_CLIENT_ID !== 'your-google-client-id' && 
+        process.env.GOOGLE_CLIENT_SECRET !== 'your-google-client-secret') {
+        
+        passport.use(new GoogleStrategy({
+            clientID: process.env.GOOGLE_CLIENT_ID,
+            clientSecret: process.env.GOOGLE_CLIENT_SECRET,
+            callbackURL: process.env.GOOGLE_CALLBACK_URL || '/api/auth/google/callback'
+          },
+          async (accessToken, refreshToken, profile, done) => {
+            try {
+              console.log('Google OAuth profile received:', profile.id, profile.emails[0]?.value, profile.displayName);
+              
+              // Check if user already exists with this Google ID
+              let user = await User.findOne({ googleId: profile.id });
+              
+              if (user) {
+                console.log('Existing Google user found:', user.username);
+                return done(null, user);
+              }
+              
+              // Check if user exists with same email
+              user = await User.findOne({ email: profile.emails[0].value });
+              
+              if (user) {
+                // Link Google account to existing user
+                console.log('Linking Google account to existing user:', user.username);
+                user.googleId = profile.id;
+                user.provider = 'google';
+                await user.save();
+                return done(null, user);
+              }
+              
+              // Create new user
+              const username = profile.displayName.replace(/\s+/g, '').toLowerCase() + Math.floor(Math.random() * 1000);
+              console.log('Creating new user from Google OAuth:', username, profile.emails[0].value);
+              
+              user = new User({
+                username: username,
+                email: profile.emails[0].value,
+                googleId: profile.id,
+                provider: 'google',
+                avatar: profile.photos[0]?.value
+              });
+              
+              await user.save();
+              console.log('New Google user created successfully:', user.username);
+              return done(null, user);
+            } catch (error) {
+              console.error('Google OAuth strategy error:', error);
+              return done(error, null);
+            }
+          }
+        ));
+        
+        passport.serializeUser((user, done) => {
+          done(null, user.id);
+        });
+
+        passport.deserializeUser(async (id, done) => {
+          try {
+            const user = await User.findById(id);
+            done(null, user);
+          } catch (error) {
+            done(error, null);
+          }
+        });
+    } else {
+        console.log('Google OAuth strategy not configured - using placeholder credentials or missing configuration');
     }
-}));
+}
 
-// Passport configuration
-app.use(passport.initialize());
-app.use(passport.session());
+// Initialize server after database connection
+async function initializeServer() {
+    // Connect to database with fallback
+    try {
+        await connectDB();
+        console.log("Database connected successfully");
+        isDatabaseConnected = true;
+        
+        // Session configuration with MongoStore
+        app.use(session({
+            secret: process.env.SESSION_SECRET || 'fallback-session-secret',
+            resave: false,
+            saveUninitialized: false,
+            store: MongoStore.create({
+                mongoUrl: process.env.MONGO_URI
+            }),
+            cookie: {
+                secure: false, // Set to true if using HTTPS
+                httpOnly: true,
+                maxAge: 1000 * 60 * 60 * 24 * 7 // 7 days
+            }
+        }));
+        
+        // Configure Passport after database connection
+        configurePassport();
+    } catch (err) {
+        console.error("Database connection failed, running in memory-only mode:", err.message);
+        isDatabaseConnected = false;
+        
+        // Session configuration with memory store
+        app.use(session({
+            secret: process.env.SESSION_SECRET || 'fallback-session-secret',
+            resave: false,
+            saveUninitialized: false,
+            cookie: {
+                secure: false,
+                httpOnly: true,
+                maxAge: 1000 * 60 * 60 * 24 * 7
+            }
+        }));
+        
+        // Configure Passport even without database
+        configurePassport();
+    }
 
-// Google OAuth Strategy - only configure if credentials are properly set
-if (process.env.GOOGLE_CLIENT_ID && 
-    process.env.GOOGLE_CLIENT_SECRET && 
-    process.env.GOOGLE_CLIENT_ID !== 'your-google-client-id' && 
-    process.env.GOOGLE_CLIENT_SECRET !== 'your-google-client-secret') {
-    
-    passport.use(new GoogleStrategy({
-        clientID: process.env.GOOGLE_CLIENT_ID,
-        clientSecret: process.env.GOOGLE_CLIENT_SECRET,
-        callbackURL: process.env.GOOGLE_CALLBACK_URL || '/api/auth/google/callback'
-      },
-      async (accessToken, refreshToken, profile, done) => {
-        try {
-          console.log('Google OAuth profile received:', profile.id, profile.emails[0]?.value, profile.displayName);
-          
-          // Check if user already exists with this Google ID
-          let user = await User.findOne({ googleId: profile.id });
-          
-          if (user) {
-            console.log('Existing Google user found:', user.username);
-            return done(null, user);
-          }
-          
-          // Check if user exists with same email
-          user = await User.findOne({ email: profile.emails[0].value });
-          
-          if (user) {
-            // Link Google account to existing user
-            console.log('Linking Google account to existing user:', user.username);
-            user.googleId = profile.id;
-            user.provider = 'google';
-            await user.save();
-            return done(null, user);
-          }
-          
-          // Create new user
-          const username = profile.displayName.replace(/\s+/g, '').toLowerCase() + Math.floor(Math.random() * 1000);
-          console.log('Creating new user from Google OAuth:', username, profile.emails[0].value);
-          
-          user = new User({
-            username: username,
-            email: profile.emails[0].value,
-            googleId: profile.id,
-            provider: 'google',
-            avatar: profile.photos[0]?.value
-          });
-          
-          await user.save();
-          console.log('New Google user created successfully:', user.username);
-          return done(null, user);
-        } catch (error) {
-          console.error('Google OAuth strategy error:', error);
-          return done(error, null);
-        }
-      }
-    ));
-    
-    passport.serializeUser((user, done) => {
-      done(null, user.id);
-    });
+    // Import routes after database is ready
+    const authRoutes = require('./routes/auth');
+    const roomRoutes = require('./routes/rooms');
+    const adminRoutes = require('./routes/admin')(io);
 
-    passport.deserializeUser(async (id, done) => {
-      try {
-        const user = await User.findById(id);
-        done(null, user);
-      } catch (error) {
-        done(error, null);
-      }
-    });
-} else {
-    console.log('Google OAuth strategy not configured - using placeholder credentials or missing configuration');
+    // Mount routes
+    app.use('/api/auth', authRoutes);
+    app.use('/api/rooms', roomRoutes);
+    app.use('/api/admin', adminRoutes);
 }
 
 const users = {};
@@ -901,11 +923,6 @@ io.on('connection', async (socket) => {
 // Serve static files from public directory
 app.use(express.static('public'));
 
-// Mount routes
-app.use('/api/auth', authRoutes);
-app.use('/api/rooms', roomRoutes);
-app.use('/api/admin', adminRoutes);
-
 // Root route - serve the home page
 app.get('/', (req, res) => {
     res.sendFile(__dirname + '/public/home.html');
@@ -946,7 +963,14 @@ app.get('/health', (req, res) => {
     }
 });
 
+// Initialize and start server
 const PORT = process.env.PORT || 3000;
-server.listen(PORT, '0.0.0.0', () => {
-  console.log(`Server is running on port ${PORT}`);
+
+initializeServer().then(() => {
+    server.listen(PORT, '0.0.0.0', () => {
+        console.log(`Server is running on port ${PORT}`);
+    });
+}).catch(err => {
+    console.error('Failed to initialize server:', err);
+    process.exit(1);
 });
