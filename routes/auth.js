@@ -319,16 +319,38 @@ if (process.env.GOOGLE_CLIENT_ID &&
     process.env.GOOGLE_CLIENT_ID !== 'your-google-client-id' && 
     process.env.GOOGLE_CLIENT_SECRET !== 'your-google-client-secret') {
     
-    router.get('/google',
-      passport.authenticate('google', { scope: ['profile', 'email'] })
-    );
+    router.get('/google', (req, res, next) => {
+        // Check if Google strategy is registered with Passport
+        try {
+            if (!passport._strategy('google')) {
+                console.log('Google OAuth strategy not available (database may not be connected)');
+                return res.redirect('/login.html?error=google_unavailable');
+            }
+        } catch (err) {
+            console.log('Google OAuth strategy not available (database may not be connected)');
+            return res.redirect('/login.html?error=google_unavailable');
+        }
+        
+        passport.authenticate('google', { scope: ['profile', 'email'] })(req, res, next);
+    });
 
-    router.get('/google/callback',
-      passport.authenticate('google', { 
-         failureRedirect: '/login.html?error=oauth_failed',
-        failureFlash: false
-      }),
-      async (req, res) => {
+    router.get('/google/callback', (req, res, next) => {
+        // Check if Google strategy is registered with Passport
+        try {
+            if (!passport._strategy('google')) {
+                console.log('Google OAuth callback attempted but strategy not available');
+                return res.redirect('/login.html?error=google_unavailable');
+            }
+        } catch (err) {
+            console.log('Google OAuth callback attempted but strategy not available');
+            return res.redirect('/login.html?error=google_unavailable');
+        }
+        
+        passport.authenticate('google', { 
+            failureRedirect: '/login.html?error=oauth_failed',
+            failureFlash: false
+        })(req, res, next);
+    }, async (req, res) => {
         try {
           console.log('Google OAuth callback successful for user:', req.user?.username || req.user?.email);
           
@@ -350,8 +372,7 @@ if (process.env.GOOGLE_CLIENT_ID &&
           console.error('Google OAuth callback error:', error);
           res.redirect('/login.html?error=oauth_failed');
         }
-      }
-    );
+    });
     
     console.log('Google OAuth routes enabled and configured.');
 } else {

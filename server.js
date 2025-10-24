@@ -45,13 +45,14 @@ app.use((req, res, next) => {
 });
 
 // Function to configure Passport after DB connection
-function configurePassport() {
+function configurePassport(withDatabase = true) {
     // Passport configuration
     app.use(passport.initialize());
     app.use(passport.session());
 
-    // Google OAuth Strategy - only configure if credentials are properly set
-    if (process.env.GOOGLE_CLIENT_ID && 
+    // Google OAuth Strategy - only configure if credentials are properly set AND database is available
+    if (withDatabase && 
+        process.env.GOOGLE_CLIENT_ID && 
         process.env.GOOGLE_CLIENT_SECRET && 
         process.env.GOOGLE_CLIENT_ID !== 'your-google-client-id' && 
         process.env.GOOGLE_CLIENT_SECRET !== 'your-google-client-secret') {
@@ -134,7 +135,11 @@ function configurePassport() {
           }
         });
     } else {
-        console.log('Google OAuth strategy not configured - using placeholder credentials or missing configuration');
+        if (!withDatabase) {
+            console.log('Google OAuth strategy not configured - database connection required');
+        } else {
+            console.log('Google OAuth strategy not configured - using placeholder credentials or missing configuration');
+        }
     }
 }
 
@@ -173,7 +178,7 @@ async function initializeServer() {
         console.log('✅ Session middleware configured with MongoStore');
         
         // Configure Passport after database connection
-        configurePassport();
+        configurePassport(true); // Pass true to enable Google OAuth
         console.log('✅ Passport configured');
     } catch (err) {
         console.error("❌ Database connection failed, running in memory-only mode:", err.message);
@@ -193,9 +198,9 @@ async function initializeServer() {
         
         console.log('⚠️  Session middleware configured with memory store');
         
-        // Configure Passport even without database
-        configurePassport();
-        console.log('⚠️  Passport configured (without database)');
+        // Configure Passport without database-dependent features
+        configurePassport(false); // Pass false to disable Google OAuth
+        console.log('⚠️  Passport configured (without database - Google OAuth disabled)');
     }
 
     // Import routes after database is ready
@@ -976,18 +981,38 @@ app.get('/room/:code', (req, res) => {
 
 // Health check endpoint for Docker
 app.get('/health', (req, res) => {
+    const mongoose = require('mongoose');
+    const connectionStates = {
+        0: 'disconnected',
+        1: 'connected',
+        2: 'connecting',
+        3: 'disconnecting'
+    };
+    
     const healthCheck = {
         uptime: process.uptime(),
         message: 'Server is running',
         timestamp: new Date().toISOString(),
         environment: process.env.NODE_ENV || 'development',
-        database: isDatabaseConnected ? 'connected' : 'disconnected',
+        database: {
+            connected: isDatabaseConnected,
+            readyState: connectionStates[mongoose.connection.readyState] || 'unknown',
+            readyStateCode: mongoose.connection.readyState,
+            hasMongoUri: !!process.env.MONGO_URI
+        },
+        features: {
+            googleOAuth: !!(process.env.GOOGLE_CLIENT_ID && 
+                           process.env.GOOGLE_CLIENT_SECRET && 
+                           process.env.GOOGLE_CLIENT_ID !== 'your-google-client-id'),
+            email: !!(process.env.EMAIL_HOST && process.env.EMAIL_USER && process.env.EMAIL_PASS)
+        },
         memory: process.memoryUsage(),
         version: require('./package.json').version
     };
     
     try {
-        res.status(200).json(healthCheck);
+        const status = isDatabaseConnected && mongoose.connection.readyState === 1 ? 200 : 503;
+        res.status(status).json(healthCheck);
     } catch (error) {
         healthCheck.message = 'Server error';
         res.status(503).json(healthCheck);
