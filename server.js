@@ -4,7 +4,6 @@ const { Server } = require('socket.io');
 const dotenv = require('dotenv');
 const session = require('express-session');
 const MongoStore = require('connect-mongo');
-const connectDB = require('./config/db');
 const passport = require('passport');
 const GoogleStrategy = require('passport-google-oauth20').Strategy;
 const cors = require('cors');
@@ -12,25 +11,6 @@ const path = require('path');
 
 // Load environment variables
 dotenv.config();
-
-// Flag for database availability
-let isDatabaseConnected = false;
-
-// Connect to database with fallback
-try {
-  connectDB()
-    .then(() => {
-      console.log("Database connected successfully");
-      isDatabaseConnected = true;
-    })
-    .catch(err => {
-      console.error("Database connection failed, running in memory-only mode:", err.message);
-      isDatabaseConnected = false;
-    });
-} catch (error) {
-  console.error("Database connection failed, running in memory-only mode:", error.message);
-  isDatabaseConnected = false;
-}
 
 // Import models
 const User = require('./models/User');
@@ -72,9 +52,9 @@ app.use(session({
     secret: process.env.SESSION_SECRET || 'fallback-session-secret',
     resave: false,
     saveUninitialized: false,
-    store: isDatabaseConnected ? MongoStore.create({
+    store: MongoStore.create({
         mongoUrl: process.env.MONGO_URI
-    }) : undefined, // Use memory store if no database
+    }),
     cookie: {
         secure: false, // Set to true if using HTTPS
         httpOnly: true,
@@ -99,6 +79,9 @@ if (process.env.GOOGLE_CLIENT_ID &&
       },
       async (accessToken, refreshToken, profile, done) => {
         try {
+          // Ensure database connection
+          await connectDB();
+          
           console.log('Google OAuth profile received:', profile.id, profile.emails[0]?.value, profile.displayName);
           
           // Check if user already exists with this Google ID
@@ -149,6 +132,7 @@ if (process.env.GOOGLE_CLIENT_ID &&
 
     passport.deserializeUser(async (id, done) => {
       try {
+        await connectDB();
         const user = await User.findById(id);
         done(null, user);
       } catch (error) {
