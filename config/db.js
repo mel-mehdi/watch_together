@@ -11,6 +11,16 @@ const connectDB = async () => {
         });
 
         console.log(`MongoDB Connected: ${conn.connection.host}`);
+        
+        // Wait for the connection to be fully ready
+        if (mongoose.connection.readyState !== 1) {
+            await new Promise((resolve, reject) => {
+                mongoose.connection.once('open', resolve);
+                mongoose.connection.once('error', reject);
+            });
+        }
+        
+        console.log(`MongoDB connection state: ${mongoose.connection.readyState} (1 = connected)`);
         return conn;
     } catch (error) {
         console.error(`MongoDB Connection Error: ${error.message}`);

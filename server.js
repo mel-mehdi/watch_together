@@ -65,6 +65,13 @@ function configurePassport() {
             try {
               console.log('Google OAuth profile received:', profile.id, profile.emails[0]?.value, profile.displayName);
               
+              // Ensure database is connected before proceeding
+              const mongoose = require('mongoose');
+              if (!isDatabaseConnected || mongoose.connection.readyState !== 1) {
+                console.error('Database not ready for authentication');
+                return done(new Error('Database connection not available'), null);
+              }
+              
               // Check if user already exists with this Google ID
               let user = await User.findOne({ googleId: profile.id });
               
@@ -113,6 +120,13 @@ function configurePassport() {
 
         passport.deserializeUser(async (id, done) => {
           try {
+            // Ensure database is connected before proceeding
+            const mongoose = require('mongoose');
+            if (!isDatabaseConnected || mongoose.connection.readyState !== 1) {
+              console.error('Database not ready for user deserialization');
+              return done(new Error('Database connection not available'), null);
+            }
+            
             const user = await User.findById(id);
             done(null, user);
           } catch (error) {
@@ -128,9 +142,18 @@ function configurePassport() {
 async function initializeServer() {
     // Connect to database with fallback
     try {
+        console.log('🔄 Attempting to connect to MongoDB...');
         await connectDB();
-        console.log("Database connected successfully");
+        console.log("✅ Database connected successfully");
         isDatabaseConnected = true;
+        
+        // Verify connection state
+        const mongoose = require('mongoose');
+        console.log(`📊 MongoDB connection state: ${mongoose.connection.readyState} (1 = connected, 0 = disconnected)`);
+        
+        if (mongoose.connection.readyState !== 1) {
+            throw new Error('Database connection not fully established');
+        }
         
         // Session configuration with MongoStore
         app.use(session({
@@ -147,10 +170,13 @@ async function initializeServer() {
             }
         }));
         
+        console.log('✅ Session middleware configured with MongoStore');
+        
         // Configure Passport after database connection
         configurePassport();
+        console.log('✅ Passport configured');
     } catch (err) {
-        console.error("Database connection failed, running in memory-only mode:", err.message);
+        console.error("❌ Database connection failed, running in memory-only mode:", err.message);
         isDatabaseConnected = false;
         
         // Session configuration with memory store
@@ -165,8 +191,11 @@ async function initializeServer() {
             }
         }));
         
+        console.log('⚠️  Session middleware configured with memory store');
+        
         // Configure Passport even without database
         configurePassport();
+        console.log('⚠️  Passport configured (without database)');
     }
 
     // Import routes after database is ready
@@ -178,6 +207,8 @@ async function initializeServer() {
     app.use('/api/auth', authRoutes);
     app.use('/api/rooms', roomRoutes);
     app.use('/api/admin', adminRoutes);
+    
+    console.log('✅ Routes mounted successfully');
 }
 
 const users = {};
