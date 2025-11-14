@@ -906,8 +906,16 @@ app.use('/api/auth', authRoutes);
 app.use('/api/rooms', roomRoutes);
 app.use('/api/admin', adminRoutes);
 
-// Root route - serve the home page
+// Root route - redirect to login if not authenticated
 app.get('/', (req, res) => {
+    const authToken = req.headers.authorization || req.query.token;
+    
+    if (!authToken) {
+        // No token, redirect to login
+        return res.redirect('/login.html');
+    }
+    
+    // Has token, serve home page
     res.sendFile(__dirname + '/public/home.html');
 });
 

@@ -139,6 +139,13 @@ class WatchTogetherHome {
         const authToken = localStorage.getItem('authToken');
         const userData = localStorage.getItem('userData');
         
+        if (!authToken || !userData) {
+            // Not authenticated, redirect to login
+            console.log('User not authenticated, redirecting to login');
+            window.location.href = '/login.html';
+            return;
+        }
+        
         if (authToken && userData) {
             try {
                 this.currentUser = JSON.parse(userData);
@@ -150,10 +157,9 @@ class WatchTogetherHome {
             } catch (error) {
                 console.error('Error parsing user data:', error);
                 this.currentUser = null;
+                window.location.href = '/login.html';
+                return;
             }
-        } else {
-            this.currentUser = null;
-            console.log('User is not authenticated');
         }
 
         // Update UI based on authentication status
@@ -185,6 +191,15 @@ class WatchTogetherHome {
                 this.loginBtn.removeEventListener('click', this.logout);
             }
         }
+    }
+
+    logout() {
+        // Clear auth data
+        localStorage.removeItem('authToken');
+        localStorage.removeItem('userData');
+        
+        // Redirect to login
+        window.location.href = '/login.html';
     }
 
     showCreateRoomModal() {
