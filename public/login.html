@@ -163,6 +163,11 @@
     </div>
 
     <script>
+        // Check if already logged in, redirect to home
+        if (localStorage.getItem('authToken') && localStorage.getItem('userData')) {
+            window.location.href = '/home.html';
+        }
+        
         // Check for URL parameters for error messages
         window.addEventListener('DOMContentLoaded', () => {
             const urlParams = new URLSearchParams(window.location.search);
