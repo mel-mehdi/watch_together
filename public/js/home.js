@@ -2,7 +2,15 @@
 class WatchTogetherHome {
     constructor() {
         console.log('WatchTogetherHome constructor called');
-        this.socket = io();
+        // Socket.io is optional for home page (only needed for room page)
+        this.socket = null;
+        try {
+            if (typeof io !== 'undefined') {
+                this.socket = io();
+            }
+        } catch (error) {
+            console.log('Socket.io not available, will use REST API only');
+        }
         this.currentUser = null;
         this.initializeElements();
         this.checkAuthentication();
@@ -125,13 +133,15 @@ class WatchTogetherHome {
             if (e.target === this.roomCreatedModal) this.hideRoomCreatedModal();
         });
         
-        // Socket events
-        this.socket.on('room created', (data) => this.onRoomCreated(data));
-        this.socket.on('room joined', (data) => this.onRoomJoined(data));
-        this.socket.on('room error', (error) => this.onRoomError(error));
-        this.socket.on('room info', (info) => this.onRoomInfo(info));
-        this.socket.on('recent rooms', (rooms) => this.displayRecentRooms(rooms));
-        this.socket.on('room deleted', (data) => this.onRoomDeleted(data));
+        // Socket events (optional)
+        if (this.socket) {
+            this.socket.on('room created', (data) => this.onRoomCreated(data));
+            this.socket.on('room joined', (data) => this.onRoomJoined(data));
+            this.socket.on('room error', (error) => this.onRoomError(error));
+            this.socket.on('room info', (info) => this.onRoomInfo(info));
+            this.socket.on('recent rooms', (rooms) => this.displayRecentRooms(rooms));
+            this.socket.on('room deleted', (data) => this.onRoomDeleted(data));
+        }
     }
 
     checkAuthentication() {
