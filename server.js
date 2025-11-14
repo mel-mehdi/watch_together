@@ -14,22 +14,41 @@ dotenv.config();
 
 // Flag for database availability
 let isDatabaseConnected = false;
+let dbConnectionPromise = null;
 
-// Connect to database with fallback
-try {
-  connectDB()
-    .then(() => {
-      console.log("Database connected successfully");
-      isDatabaseConnected = true;
-    })
-    .catch(err => {
-      console.error("Database connection failed, running in memory-only mode:", err.message);
-      isDatabaseConnected = false;
-    });
-} catch (error) {
-  console.error("Database connection failed, running in memory-only mode:", error.message);
-  isDatabaseConnected = false;
-}
+// Initialize database connection (for serverless, we'll reconnect on each request if needed)
+const initDB = async () => {
+  if (mongoose.connection.readyState === 1) {
+    // Already connected
+    return true;
+  }
+  
+  if (mongoose.connection.readyState === 2) {
+    // Currently connecting, wait for existing connection
+    if (dbConnectionPromise) {
+      await dbConnectionPromise;
+      return true;
+    }
+  }
+  
+  // Not connected, create new connection
+  try {
+    dbConnectionPromise = connectDB();
+    await dbConnectionPromise;
+    isDatabaseConnected = true;
+    console.log("Database connected successfully");
+    return true;
+  } catch (err) {
+    console.error("Database connection failed:", err.message);
+    isDatabaseConnected = false;
+    return false;
+  }
+};
+
+// Initialize connection on startup (for non-serverless)
+initDB().catch(err => {
+  console.error("Initial database connection failed, will retry on requests");
+});
 
 // Import models
 const User = require('./models/User');
@@ -59,6 +78,17 @@ app.use(cors({
     origin: true, // Allow all origins in development
     credentials: true
 }));
+
+// Middleware to ensure database connection for API routes
+app.use('/api', async (req, res, next) => {
+    try {
+        await initDB();
+        next();
+    } catch (error) {
+        console.error('Database connection middleware error:', error);
+        next(); // Continue even if DB fails (fallback to memory mode)
+    }
+});
 
 // Debug middleware to log all requests
 app.use((req, res, next) => {
