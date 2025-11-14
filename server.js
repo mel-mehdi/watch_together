@@ -4,6 +4,7 @@ const { Server } = require('socket.io');
 const dotenv = require('dotenv');
 const session = require('express-session');
 const MongoStore = require('connect-mongo');
+const mongoose = require('mongoose');
 const connectDB = require('./config/db');
 const passport = require('passport');
 const GoogleStrategy = require('passport-google-oauth20').Strategy;
