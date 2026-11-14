@@ -59,7 +59,7 @@ dist
 
 # Gatsby files
 .cache/
-public
+# ("public" removed: this project serves its site from public/)
 
 # vuepress build output
 .vuepress/dist
@@ -294,7 +294,6 @@ dist
 
 # Gatsby files
 .cache/
-public
 
 # vuepress build output
 .vuepress/dist

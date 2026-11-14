@@ -907,3 +907,82 @@
 .uppercase {
     text-transform: uppercase;
 }
+
+/* ---- Layout fixes (phones and narrow screens) ---- */
+
+/* Let grid columns shrink below their content width, so the hero never
+   spills past the right edge of the screen */
+.hero .container > * {
+    min-width: 0;
+}
+
+@media (max-width: 600px) {
+    .home-header {
+        padding: 0.75rem 0;
+    }
+
+    .logo {
+        font-size: 1.15rem;
+        white-space: nowrap;
+    }
+
+    .logo i {
+        font-size: 1.3rem;
+    }
+
+    /* Keep only the account controls in the header on phones */
+    .nav-links .nav-text-link {
+        display: none;
+    }
+
+    .home-header .user-menu {
+        padding: 4px 4px 4px 10px;
+        gap: 8px;
+    }
+
+    .home-header .username {
+        font-size: 13px;
+        max-width: 96px;
+        overflow: hidden;
+        white-space: nowrap;
+    }
+
+    .hero {
+        padding: 6rem 0 3rem;
+        min-height: auto;
+    }
+
+    .hero-content h1 {
+        font-size: 2.1rem;
+    }
+
+    .hero-content p {
+        font-size: 1.05rem;
+    }
+
+    .hero-features {
+        justify-content: center;
+    }
+
+    .mockup-screen {
+        width: 100%;
+        max-width: 340px;
+    }
+}
+
+@media (max-width: 600px) {
+    .home-header .container {
+        gap: 10px;
+    }
+}
+
+/* Small phones: icon-only logout so the brand name keeps its room */
+@media (max-width: 420px) {
+    .home-header .logout-label {
+        display: none;
+    }
+
+    .home-header .logout-btn {
+        padding: 6px 9px;
+    }
+}

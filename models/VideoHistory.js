@@ -9,7 +9,10 @@ const videoHistorySchema = new mongoose.Schema({
     type: String,
     required: true
   },
+  // Filled from the provider's public oEmbed lookup (YouTube, Vimeo, Dailymotion)
   title: String,
+  author: String,
+  thumbnail: String,
   type: String,
   addedBy: {
     type: mongoose.Schema.Types.ObjectId,

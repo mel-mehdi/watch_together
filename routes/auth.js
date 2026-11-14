@@ -41,7 +41,9 @@ if (process.env.EMAIL_HOST && process.env.EMAIL_USER && process.env.EMAIL_PASS) 
 // Register new user
 router.post('/register', async (req, res) => {
     try {
-        const { username, email, password } = req.body;
+        const { username, password } = req.body;
+        // Stored emails are trimmed and lowercased, so compare the same form
+        const email = typeof req.body.email === 'string' ? req.body.email.trim().toLowerCase() : req.body.email;
 
         // Validation
         if (!username || !email || !password) {
@@ -112,8 +114,15 @@ router.post('/register', async (req, res) => {
         });
 
     } catch (error) {
+        if (error.name === 'ValidationError') {
+            const first = Object.values(error.errors)[0];
+            return res.status(400).json({ error: first ? first.message : 'Invalid registration data' });
+        }
+        if (error.code === 11000) {
+            return res.status(400).json({ error: 'Username or email already registered' });
+        }
         console.error('Registration error:', error);
-        res.status(500).json({ 
+        res.status(500).json({
             error: 'Server error during registration' 
         });
     }
@@ -134,7 +143,7 @@ router.post('/login', async (req, res) => {
         const user = await User.findOne({
             $or: [
                 { username: usernameOrEmail },
-                { email: usernameOrEmail }
+                { email: String(usernameOrEmail).trim().toLowerCase() }
             ]
         });
 
@@ -386,7 +395,7 @@ router.post('/forgot-password', async (req, res) => {
         const user = await User.findOne({
             $or: [
                 { username: usernameOrEmail },
-                { email: usernameOrEmail }
+                { email: String(usernameOrEmail).trim().toLowerCase() }
             ]
         });
 

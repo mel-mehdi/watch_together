@@ -22,6 +22,12 @@ const messageSchema = new mongoose.Schema({
     type: Boolean,
     default: false
   },
+  // One entry per person per emoji; reacting again with the same emoji removes it
+  reactions: [{
+    _id: false,
+    emoji: { type: String, required: true },
+    username: { type: String, required: true }
+  }],
   timestamp: {
     type: Date,
     default: Date.now

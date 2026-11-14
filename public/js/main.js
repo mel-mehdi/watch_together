@@ -22,6 +22,9 @@ const VIDEO_TYPES = {
     DAILYMOTION: 'dailymotion'
 };
 
+// Must match ALLOWED_REACTIONS on the server
+const REACTION_EMOJIS = ['👍', '❤️', '😂', '😮', '😢'];
+
 const PLAYER_STATES = {
     UNSTARTED: -1,
     ENDED: 0,
@@ -133,6 +136,16 @@ class DOMCache {
 // 4. UTILITY FUNCTIONS
 // ========================================
 class Utils {
+    // Text from other users must never be inserted as HTML
+    static escapeHtml(value) {
+        return String(value ?? '')
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;');
+    }
+
     static detectVideoType(url) {
         if (!url) return null;
         url = url.trim();
@@ -339,6 +352,12 @@ class VideoPlayerManager {
     }
 
     initialize(videoUrl) {
+        // Only web links may reach the player frame (never javascript: or data:)
+        if (videoUrl && !/^https?:\/\//i.test(String(videoUrl).trim())) {
+            console.warn('Refused to load a non-http(s) video URL');
+            return;
+        }
+
         if (this.player) {
             this.cleanup();
         }
@@ -352,6 +371,15 @@ class VideoPlayerManager {
 
         this.currentVideoUrl = videoUrl;
         this.appState.currentVideoType = Utils.detectVideoType(videoUrl);
+
+        // Play the "video enter" animation (css/motion.css)
+        const container = this.dom.get('video-player')?.closest('.video-container');
+        if (container) {
+            container.classList.remove('wt-video-enter');
+            void container.offsetWidth; // restart the animation for back-to-back changes
+            container.classList.add('wt-video-enter');
+            container.addEventListener('animationend', () => container.classList.remove('wt-video-enter'), { once: true });
+        }
         
         console.log("Detected video type:", this.appState.currentVideoType, "URL:", videoUrl);
 
@@ -419,9 +447,84 @@ class VideoPlayerManager {
         }, CONFIG.YOUTUBE_API_TIMEOUT);
     }
 
+    // Listen to what the YouTube iframe reports (state, position). Without this
+    // the admin's page never learns that the video was played, paused or seeked
+    // inside the YouTube player, so nothing is sent to the other viewers.
+    listenToYouTubePlayer(videoPlayer) {
+        this.stopListeningToYouTube();
+
+        // Anyone's play/pause/seek is shared with the room; ignoreEvents is set
+        // while applying a remote command, so it is not echoed back
+        const emitPlayback = (event, data) => {
+            if (!this.appState.ignoreEvents) this.socket.emit(event, data);
+        };
+        let lastTimeAt = Date.now();
+
+        this.ytMessageHandler = (event) => {
+            if (!this.player || event.source !== videoPlayer.contentWindow) return;
+            let data;
+            try { data = typeof event.data === 'string' ? JSON.parse(event.data) : event.data; } catch { return; }
+            if (!data || !data.event) return;
+
+            if (data.event === 'onReady') {
+                clearInterval(this.ytHandshake);
+                return;
+            }
+
+            const info = data.info;
+            let newState = null;
+            if (data.event === 'onStateChange' && typeof info === 'number') newState = info;
+            if (data.event === 'infoDelivery' && info && typeof info.playerState === 'number') newState = info.playerState;
+
+            if (data.event === 'infoDelivery' && info && typeof info.currentTime === 'number') {
+                clearInterval(this.ytHandshake);
+                const now = Date.now();
+                const playing = this.player.playerState === PLAYER_STATES.PLAYING;
+                const expected = this.player.lastKnownTime + (playing ? (now - lastTimeAt) / 1000 : 0);
+                // A jump of more than 2s from where playback should be = a seek
+                if (Math.abs(info.currentTime - expected) > 2 && newState === null) {
+                    emitPlayback('video seek', info.currentTime);
+                }
+                this.player.lastKnownTime = info.currentTime;
+                lastTimeAt = now;
+            }
+
+            if (newState !== null && newState !== this.player.playerState) {
+                this.player.playerState = newState;
+                // Only a change between playing and paused is a viewer's action;
+                // buffering → playing is not, so it must not be re-sent
+                if ((newState === PLAYER_STATES.PLAYING || newState === PLAYER_STATES.PAUSED) && newState !== this.player.intent) {
+                    this.player.intent = newState;
+                    const kind = newState === PLAYER_STATES.PLAYING ? 'play' : 'pause';
+                    emitPlayback(`video ${kind}`, this.player.lastKnownTime);
+                    if (this.appState.isAdmin) emitPlayback('admin action', kind);
+                }
+            }
+        };
+        window.addEventListener('message', this.ytMessageHandler);
+
+        // Handshake: ask the iframe to start sending events; repeat until it answers
+        const sayListening = () => {
+            try {
+                videoPlayer?.contentWindow?.postMessage(JSON.stringify({ event: 'listening', id: 'watch-together', channel: 'widget' }), '*');
+                videoPlayer?.contentWindow?.postMessage(JSON.stringify({ event: 'command', func: 'addEventListener', args: ['onStateChange'], id: 'watch-together', channel: 'widget' }), '*');
+            } catch (error) { /* iframe not ready yet */ }
+        };
+        sayListening();
+        this.ytHandshake = setInterval(sayListening, 1000);
+        setTimeout(() => clearInterval(this.ytHandshake), 15000);
+    }
+
+    stopListeningToYouTube() {
+        if (this.ytMessageHandler) window.removeEventListener('message', this.ytMessageHandler);
+        clearInterval(this.ytHandshake);
+        this.ytMessageHandler = null;
+    }
+
     setupYouTubeSyncPlayer() {
         const videoPlayer = this.dom.get('video-player');
-        
+        this.listenToYouTubePlayer(videoPlayer);
+
         this.player = {
             playerState: PLAYER_STATES.UNSTARTED,
             lastKnownTime: 0,
@@ -432,9 +535,9 @@ class VideoPlayerManager {
                     videoPlayer?.contentWindow?.postMessage(JSON.stringify({
                         event: 'command', func: 'getCurrentTime'
                     }), '*');
-                    setTimeout(() => resolve(this.player.lastKnownTime || 0), 100);
+                    setTimeout(() => resolve(this.player?.lastKnownTime || 0), 100);
                 } catch (error) {
-                    resolve(this.player.lastKnownTime || 0);
+                    resolve(this.player?.lastKnownTime || 0);
                 }
             }),
 
@@ -457,6 +560,7 @@ class VideoPlayerManager {
                         event: 'command', func: 'playVideo'
                     }), '*');
                     this.player.playerState = PLAYER_STATES.PLAYING;
+                    this.player.intent = PLAYER_STATES.PLAYING;
                 } catch (error) {
                     console.error("Error playing:", error);
                 }
@@ -468,6 +572,7 @@ class VideoPlayerManager {
                         event: 'command', func: 'pauseVideo'
                     }), '*');
                     this.player.playerState = PLAYER_STATES.PAUSED;
+                    this.player.intent = PLAYER_STATES.PAUSED;
                 } catch (error) {
                     console.error("Error pausing:", error);
                 }
@@ -521,27 +626,26 @@ class VideoPlayerManager {
             }
         };
 
-        const emitIfAdmin = (event, data) => {
-            if (this.appState.isAdmin && !this.appState.ignoreEvents) {
-                this.socket.emit(event, data);
-            }
+        // Anyone's play/pause/seek is shared with the room (not while applying a remote one)
+        const emitPlayback = (event, data) => {
+            if (!this.appState.ignoreEvents) this.socket.emit(event, data);
         };
 
         directVideoPlayer.addEventListener('play', Utils.throttle(() => {
             this.player.playerState = PLAYER_STATES.PLAYING;
-            emitIfAdmin('video play', directVideoPlayer.currentTime);
-            emitIfAdmin('admin action', 'play');
+            emitPlayback('video play', directVideoPlayer.currentTime);
+            if (this.appState.isAdmin) emitPlayback('admin action', 'play');
         }, 100));
 
         directVideoPlayer.addEventListener('pause', Utils.throttle(() => {
             this.player.playerState = PLAYER_STATES.PAUSED;
-            emitIfAdmin('video pause', directVideoPlayer.currentTime);
-            emitIfAdmin('admin action', 'pause');
+            emitPlayback('video pause', directVideoPlayer.currentTime);
+            if (this.appState.isAdmin) emitPlayback('admin action', 'pause');
         }, 100));
 
         directVideoPlayer.addEventListener('seeked', Utils.throttle(() => {
             this.player.lastKnownTime = directVideoPlayer.currentTime;
-            emitIfAdmin('video seek', directVideoPlayer.currentTime);
+            emitPlayback('video seek', directVideoPlayer.currentTime);
         }, 100));
 
         directVideoPlayer.addEventListener('loadedmetadata', () => {
@@ -626,6 +730,7 @@ class VideoPlayerManager {
         this.appState.syncInterval = setInterval(() => {
             if (this.player && this.appState.isAdmin) {
                 this.player.getCurrentTime().then(currentTime => {
+                    if (!this.player) return; // video was removed while waiting
                     this.player.getPlayerState().then(playerState => {
                         this.socket.emit('detailed sync', {
                             time: currentTime,
@@ -647,6 +752,7 @@ class VideoPlayerManager {
 
     cleanup() {
         this.stopAdminSync();
+        this.stopListeningToYouTube();
         this.player = null;
         this.vimeoPlayer = null;
         this.clearVideoErrorMessages();
@@ -897,6 +1003,12 @@ class WatchTogetherApp {
         if (changeVideoBtn) {
             changeVideoBtn.addEventListener('click', () => this.handleChangeVideo());
         }
+        const videoUrlBox = this.domCache.get('video-url');
+        if (videoUrlBox) {
+            videoUrlBox.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') this.handleChangeVideo();
+            });
+        }
 
         // Admin controls
         this.setupAdminControls();
@@ -1017,6 +1129,28 @@ class WatchTogetherApp {
             if (videoUrlInput) videoUrlInput.value = url;
         });
 
+        // Sent by the server on join: restore the room's current video, so people
+        // who join late or reload see what everyone else is watching
+        this.socketManager.on('video state', (state) => {
+            if (!state?.url || state.url === this.videoPlayer.currentVideoUrl) return;
+            this.videoPlayer.initialize(state.url);
+            const videoUrlInput = this.domCache.get('video-url');
+            if (videoUrlInput) videoUrlInput.value = state.url;
+
+            // Once the player exists, jump to the room's position (and play if it is playing)
+            let tries = 0;
+            const applyPosition = setInterval(() => {
+                const player = this.videoPlayer.player;
+                if (!player && ++tries < 30) return;
+                clearInterval(applyPosition);
+                if (!player) return;
+                this.appState.ignoreEvents = true;
+                if (state.currentTime) player.seekTo(state.currentTime);
+                if (state.playing) player.playVideo();
+                setTimeout(() => { this.appState.ignoreEvents = false; }, 500);
+            }, 500);
+        });
+
         // Video control events
         this.socketManager.on('video play', (data) => {
             if (!this.videoPlayer.player) return;
@@ -1037,7 +1171,7 @@ class WatchTogetherApp {
         });
 
         this.socketManager.on('video seek', (data) => {
-            if (!this.appState.isAdmin && this.videoPlayer.player) {
+            if (this.videoPlayer.player) {
                 const time = typeof data === 'object' ? data.time : data;
                 this.appState.ignoreEvents = true;
                 this.videoPlayer.player.seekTo(time);
@@ -1341,11 +1475,14 @@ class WatchTogetherApp {
     handleChangeVideo() {
         const videoUrlInput = this.domCache.get('video-url');
         
-        if (videoUrlInput?.value.trim() && this.appState.isAdmin) {
-            this.socketManager.emit('change video', videoUrlInput.value.trim());
-        } else if (!this.appState.isAdmin) {
-            NotificationSystem.show('Only the admin can change the video for everyone', 'error');
+        // Anyone in the room can load a video for everyone
+        const url = videoUrlInput?.value.trim();
+        if (!url) return;
+        if (!/^https?:\/\//i.test(url)) {
+            NotificationSystem.show('Paste a link starting with http:// or https://', 'error');
+            return;
         }
+        this.socketManager.emit('change video', url);
     }
 
     handleChatMessage(msg) {
@@ -1365,8 +1502,8 @@ class WatchTogetherApp {
         const lastMessage = messages.lastElementChild;
         const shouldGroup = this.shouldGroupMessages(lastMessage, msg.username, isSentByCurrentUser);
         
-        shouldGroup ? 
-            this.addToMessageGroup(lastMessage, msg.message, timeString) :
+        shouldGroup ?
+            this.addToMessageGroup(lastMessage, msg, timeString) :
             this.createNewMessageGroup(messages, msg, isSentByCurrentUser, timeString);
 
         messages.scrollTop = messages.scrollHeight;
@@ -1379,22 +1516,49 @@ class WatchTogetherApp {
         return lastUsername === username && timeDiff < 120000;
     }
 
-    addToMessageGroup(messageGroup, messageText, timeString) {
-        const messagesContainer = messageGroup.querySelector('.message-group-content');
-        const newBubble = document.createElement('div');
-        newBubble.className = 'message-bubble';
-        newBubble.innerHTML = `
-            <span class="message-text">${messageText}</span>
-            <span class="message-time">${timeString}</span>
-            <div class="message-quick-reactions">
-                <span class="quick-reaction" data-emoji="👍">👍</span>
-                <span class="quick-reaction" data-emoji="❤️">❤️</span>
-                <span class="quick-reaction" data-emoji="😂">😂</span>
-                <span class="quick-reaction" data-emoji="😮">😮</span>
-                <span class="quick-reaction" data-emoji="😢">😢</span>
+    // One message: the bubble, its 😊 "add reaction" button, and the reaction
+    // badges shown under it (the picker itself is shared, see openReactionPicker).
+    // All user text is escaped.
+    renderMessageBubble({ id, text, timeString, reactions }) {
+        const esc = Utils.escapeHtml;
+        const reactable = Boolean(id);
+        return `
+            <div class="message-bubble" ${reactable ? `data-message-id="${esc(id)}"` : ''}>
+                <span class="message-text">${esc(text)}</span>
+                <span class="message-time">${esc(timeString)}</span>
+                ${reactable ? `
+                <button type="button" class="react-btn" title="Add reaction" aria-label="Add reaction" aria-haspopup="menu" aria-expanded="false">
+                    <i class="far fa-face-smile"></i>
+                </button>` : ''}
             </div>
+            ${reactable ? `<div class="message-reactions" data-for="${esc(id)}">${this.renderReactionChips(reactions)}</div>` : ''}
         `;
-        messagesContainer.appendChild(newBubble);
+    }
+
+    // Badges like "👍 2": one per emoji, highlighted when you are one of them
+    renderReactionChips(reactions = []) {
+        const esc = Utils.escapeHtml;
+        const byEmoji = new Map();
+        reactions.forEach(r => {
+            if (!byEmoji.has(r.emoji)) byEmoji.set(r.emoji, []);
+            byEmoji.get(r.emoji).push(r.username);
+        });
+        return [...byEmoji].map(([emoji, names]) => {
+            const mine = names.includes(this.appState.username);
+            const label = `${emoji} ${names.length}: ${names.join(', ')}`;
+            return `<button type="button" class="reaction${mine ? ' mine' : ''}" data-emoji="${esc(emoji)}"
+                        title="${esc(names.join(', '))}" aria-label="${esc(label)}" aria-pressed="${mine}">
+                    <span class="reaction-emoji">${esc(emoji)}</span>
+                    <span class="reaction-count">${names.length}</span>
+                </button>`;
+        }).join('');
+    }
+
+    addToMessageGroup(messageGroup, msg, timeString) {
+        const messagesContainer = messageGroup.querySelector('.message-group-content');
+        messagesContainer.insertAdjacentHTML('beforeend', this.renderMessageBubble({
+            id: msg.id, text: msg.message, timeString, reactions: msg.reactions
+        }));
         messageGroup.dataset.timestamp = Date.now().toString();
     }
 
@@ -1411,20 +1575,10 @@ class WatchTogetherApp {
             <div class="message-avatar">${avatar}</div>
             <div class="message-group-content">
                 <div class="message-header">
-                    <span class="message-username">${msg.username}</span>
-                    <span class="message-timestamp">${timeString}</span>
+                    <span class="message-username">${Utils.escapeHtml(msg.username)}</span>
+                    <span class="message-timestamp">${Utils.escapeHtml(timeString)}</span>
                 </div>
-                <div class="message-bubble">
-                    <span class="message-text">${msg.message}</span>
-                    <span class="message-time">${timeString}</span>
-                    <div class="message-quick-reactions">
-                        <span class="quick-reaction" data-emoji="👍">👍</span>
-                        <span class="quick-reaction" data-emoji="❤️">❤️</span>
-                        <span class="quick-reaction" data-emoji="😂">😂</span>
-                        <span class="quick-reaction" data-emoji="😮">😮</span>
-                        <span class="quick-reaction" data-emoji="😢">😢</span>
-                    </div>
-                </div>
+                ${this.renderMessageBubble({ id: msg.id, text: msg.message, timeString, reactions: msg.reactions })}
             </div>
         `;
 
@@ -1432,8 +1586,9 @@ class WatchTogetherApp {
     }
 
     generateAvatar(username, avatarUrl = null) {
-        if (avatarUrl?.trim()) {
-            return `<div class="avatar avatar-with-image" style="background-image: url('${avatarUrl}');" title="${username}"></div>`;
+        if (avatarUrl?.trim() && /^https:\/\//i.test(avatarUrl.trim())) {
+            const safeUrl = encodeURI(avatarUrl.trim()).replace(/'/g, '%27');
+            return `<div class="avatar avatar-with-image" style="background-image: url('${safeUrl}');" title="${Utils.escapeHtml(username)}"></div>`;
         }
         
         const colors = [
@@ -1452,8 +1607,8 @@ class WatchTogetherApp {
             hash = username.charCodeAt(i) + ((hash << 5) - hash);
         }
         const colorIndex = Math.abs(hash) % colors.length;
-        const initials = username.substring(0, 2).toUpperCase();
-        
+        const initials = Utils.escapeHtml(username.substring(0, 2).toUpperCase());
+
         return `<div class="avatar" style="background: ${colors[colorIndex]}">${initials}</div>`;
     }
 
@@ -1480,8 +1635,8 @@ class WatchTogetherApp {
                 messageElement.className = 'system-message';
                 messageElement.innerHTML = `
                     <div class="message-content system">
-                        <span class="message-text">${group.content}</span>
-                        <span class="message-time">${group.timeString}</span>
+                        <span class="message-text">${Utils.escapeHtml(group.content)}</span>
+                        <span class="message-time">${Utils.escapeHtml(group.timeString)}</span>
                     </div>
                 `;
                 messages.appendChild(messageElement);
@@ -1496,26 +1651,16 @@ class WatchTogetherApp {
                 messageElement.dataset.username = group.username;
                 messageElement.dataset.timestamp = group.timestamp.toString();
                 
-                const bubbles = group.messages.map(msg => `
-                    <div class="message-bubble">
-                        <span class="message-text">${msg.content}</span>
-                        <span class="message-time">${msg.timeString}</span>
-                        <div class="message-quick-reactions">
-                            <span class="quick-reaction" data-emoji="👍">👍</span>
-                            <span class="quick-reaction" data-emoji="❤️">❤️</span>
-                            <span class="quick-reaction" data-emoji="😂">😂</span>
-                            <span class="quick-reaction" data-emoji="😮">😮</span>
-                            <span class="quick-reaction" data-emoji="😢">😢</span>
-                        </div>
-                    </div>
-                `).join('');
+                const bubbles = group.messages.map(msg => this.renderMessageBubble({
+                    id: msg.id, text: msg.content, timeString: msg.timeString, reactions: msg.reactions
+                })).join('');
                 
                 messageElement.innerHTML = `
                     <div class="message-avatar">${avatar}</div>
                     <div class="message-group-content">
                         <div class="message-header">
-                            <span class="message-username">${group.username}</span>
-                            <span class="message-timestamp">${group.timeString}</span>
+                            <span class="message-username">${Utils.escapeHtml(group.username)}</span>
+                            <span class="message-timestamp">${Utils.escapeHtml(group.timeString)}</span>
                         </div>
                         ${bubbles}
                     </div>
@@ -1570,7 +1715,9 @@ class WatchTogetherApp {
                     // Add to current group
                     currentGroup.messages.push({
                         content: msg.content,
-                        timeString
+                        timeString,
+                        id: msg._id,
+                        reactions: msg.reactions
                     });
                     currentGroup.timestamp = timestamp; // Update group timestamp
                 } else {
@@ -1582,7 +1729,9 @@ class WatchTogetherApp {
                         timeString,
                         messages: [{
                             content: msg.content,
-                            timeString
+                            timeString,
+                            id: msg._id,
+                            reactions: msg.reactions
                         }]
                     };
                     groups.push(currentGroup);
@@ -2102,22 +2251,31 @@ class WatchTogetherApp {
         } else {
             historyHTML += '<div class="video-history-list">';
             
-            history.forEach((video, index) => {
+            const esc = Utils.escapeHtml;
+            history.forEach((video) => {
+                const url = String(video.url || '');
                 const timeAgo = this.getTimeAgo(new Date(video.timestamp));
-                const videoTitle = this.getVideoTitle(video.url);
-                const isYoutube = video.url.includes('youtube.com') || video.url.includes('youtu.be');
-                const isVimeo = video.url.includes('vimeo.com');
-                
+                // Real title from the server when known, otherwise a guess from the link
+                const videoTitle = video.title || this.getVideoTitle(url);
+                const isYoutube = url.includes('youtube.com') || url.includes('youtu.be');
+                const isVimeo = url.includes('vimeo.com');
+                const thumbnail = typeof video.thumbnail === 'string' && video.thumbnail.startsWith('https://')
+                    ? video.thumbnail : '';
+
+                // The URL goes in a data attribute (escaped), never into inline code
                 historyHTML += `
-                    <div class="video-history-item" onclick="app.loadHistoryVideo('${video.url.replace(/'/g, "\\'")}'); app.closeVideoHistoryModal();">
-                        <div class="video-history-thumbnail">
-                            <i class="fas ${isYoutube ? 'fa-play' : isVimeo ? 'fa-vimeo' : 'fa-film'}"></i>
+                    <div class="video-history-item" role="button" tabindex="0" data-url="${esc(url)}" aria-label="Play ${esc(videoTitle)}">
+                        <div class="video-history-thumbnail${thumbnail ? ' has-image' : ''}">
+                            ${thumbnail
+                                ? `<img src="${esc(thumbnail)}" alt="" loading="lazy" referrerpolicy="no-referrer">`
+                                : `<i class="fas ${isYoutube ? 'fa-play' : isVimeo ? 'fa-vimeo' : 'fa-film'}"></i>`}
                         </div>
                         <div class="video-history-info">
-                            <div class="video-history-title">${videoTitle}</div>
+                            <div class="video-history-title" title="${esc(videoTitle)}">${esc(videoTitle)}</div>
+                            ${video.author ? `<div class="video-history-channel">${esc(video.author)}</div>` : ''}
                             <div class="video-history-meta">
                                 <span class="video-history-user">
-                                    <i class="fas fa-user"></i> ${video.changedBy || 'Unknown'}
+                                    <i class="fas fa-user"></i> ${esc(video.changedBy || 'Unknown')}
                                 </span>
                                 <span class="video-history-time">
                                     <i class="fas fa-clock"></i> ${timeAgo}
@@ -2136,6 +2294,15 @@ class WatchTogetherApp {
 
         historyHTML += '</div>';
         container.innerHTML = historyHTML;
+
+        container.querySelectorAll('.video-history-item').forEach(item => {
+            const play = () => {
+                this.loadHistoryVideo(item.dataset.url);
+                this.closeVideoHistoryModal();
+            };
+            item.addEventListener('click', play);
+            item.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); play(); } });
+        });
     }
 
     getTimeAgo(date) {
@@ -2153,35 +2320,31 @@ class WatchTogetherApp {
 
     getVideoTitle(url) {
         try {
-            // Extract title from YouTube URLs
-            if (url.includes('youtube.com') || url.includes('youtu.be')) {
-                const videoId = Utils.extractYouTubeId(url);
-                return videoId ? `YouTube Video (${videoId})` : 'YouTube Video';
-            }
-            
-            // Extract filename from direct video URLs
+            // Used only when the server has no real title for this link
             const urlObj = new URL(url);
-            const pathname = urlObj.pathname;
-            const filename = pathname.split('/').pop();
-            
-            if (filename && filename.includes('.')) {
-                const nameWithoutExt = filename.split('.').slice(0, -1).join('.');
-                return nameWithoutExt.length > 30 ? 
-                    nameWithoutExt.substring(0, 30) + '...' : nameWithoutExt;
+            const host = urlObj.hostname.replace(/^www\./, '');
+
+            if (/youtube\.com|youtu\.be/.test(host) && Utils.extractYouTubeId(url)) {
+                return 'YouTube video';
             }
-            
-            return 'Direct Video';
+
+            // Direct files: the file name without its extension
+            const filename = decodeURIComponent(urlObj.pathname.split('/').pop() || '');
+            if (filename.includes('.')) {
+                const nameWithoutExt = filename.split('.').slice(0, -1).join('.');
+                return nameWithoutExt.length > 40 ? nameWithoutExt.substring(0, 40) + '…' : nameWithoutExt;
+            }
+
+            // Anything else (a site's home page, say): show where it points
+            const path = urlObj.pathname.replace(/\/$/, '');
+            const label = host + path;
+            return label.length > 50 ? label.substring(0, 50) + '…' : label;
         } catch (error) {
             return 'Video';
         }
     }
 
     loadHistoryVideo(url) {
-        if (!this.appState.isAdmin) {
-            NotificationSystem.show('Only the admin can change the video for everyone', 'error');
-            return;
-        }
-        
         const videoUrlInput = this.domCache.get('video-url');
         if (videoUrlInput) {
             videoUrlInput.value = url;
@@ -2295,25 +2458,117 @@ class WatchTogetherApp {
             chatInput.addEventListener('blur', () => this.handleStopTyping());
         }
         
-        // Add quick reaction handlers
+        // Reactions: 😊 button opens the picker; a picked emoji or a tapped badge
+        // toggles your reaction; the server sends the result to everyone
         const messages = this.domCache.get('messages');
         if (messages) {
             messages.addEventListener('click', (e) => {
-                if (e.target.classList.contains('quick-reaction')) {
-                    const emoji = e.target.dataset.emoji;
-                    const messageGroup = e.target.closest('.message-group');
-                    if (messageGroup && emoji) {
-                        this.addReactionToMessage(messageGroup, emoji, this.appState.username);
-                        // Optionally emit to socket for real-time reactions
-                        this.socketManager.emit('message reaction', {
-                            messageId: messageGroup.dataset.messageId,
-                            emoji: emoji,
-                            username: this.appState.username
-                        });
-                    }
+                const reactBtn = e.target.closest('.react-btn');
+                if (reactBtn) {
+                    const bubble = reactBtn.closest('.message-bubble');
+                    const wasOpenHere = this.pickerBubble === bubble;
+                    this.closeReactionPicker();
+                    if (!wasOpenHere) this.openReactionPicker(bubble);
+                    return;
+                }
+
+                // Tapping a badge toggles your reaction with that emoji
+                const badge = e.target.closest('.reaction');
+                const messageId = badge?.closest('.message-reactions')?.dataset.for;
+                if (badge && messageId) {
+                    this.socketManager.emit('message reaction', { messageId, emoji: badge.dataset.emoji });
                 }
             });
+
+            document.addEventListener('click', (e) => {
+                if (!e.target.closest('.reaction-picker, .react-btn')) this.closeReactionPicker();
+            });
+            document.addEventListener('keydown', (e) => {
+                if (e.key === 'Escape') this.closeReactionPicker();
+            });
+            // The picker floats over the page, so close it when things move under it
+            messages.closest('.chat-container')?.addEventListener('scroll', () => this.closeReactionPicker(), { passive: true });
+            window.addEventListener('resize', () => this.closeReactionPicker());
         }
+
+        this.socketManager.on('message reaction', ({ messageId, reactions } = {}) => {
+            const container = [...document.querySelectorAll('.message-reactions')]
+                .find(el => el.dataset.for === messageId);
+            if (!container) return;
+
+            // Remember counts before re-rendering, so only what changed animates
+            const before = new Map([...container.querySelectorAll('.reaction')]
+                .map(el => [el.dataset.emoji, el.querySelector('.reaction-count')?.textContent]));
+            container.innerHTML = this.renderReactionChips(reactions);
+            container.querySelectorAll('.reaction').forEach(el => {
+                const count = el.querySelector('.reaction-count')?.textContent;
+                if (!before.has(el.dataset.emoji)) el.classList.add('wt-new');
+                else if (before.get(el.dataset.emoji) !== count) el.classList.add('wt-bump');
+                el.addEventListener('animationend', () => el.classList.remove('wt-new', 'wt-bump'), { once: true });
+            });
+        });
+    }
+
+    // One picker for the whole page, created on first use
+    getReactionPicker() {
+        if (this.reactionPicker) return this.reactionPicker;
+        const picker = document.createElement('div');
+        picker.className = 'reaction-picker';
+        picker.setAttribute('role', 'menu');
+        picker.innerHTML = REACTION_EMOJIS.map(emoji =>
+            `<button type="button" class="quick-reaction" role="menuitem" data-emoji="${emoji}" aria-label="React ${emoji}">${emoji}</button>`
+        ).join('');
+        picker.addEventListener('click', (e) => {
+            const choice = e.target.closest('.quick-reaction');
+            const messageId = this.pickerBubble?.dataset.messageId;
+            if (choice && messageId) {
+                this.socketManager.emit('message reaction', { messageId, emoji: choice.dataset.emoji });
+            }
+            this.closeReactionPicker();
+        });
+        document.body.appendChild(picker);
+        this.reactionPicker = picker;
+        return picker;
+    }
+
+    // Place the picker on the top edge of the message it reacts to, on the
+    // side of its 😊 button, kept inside the chat panel. It covers only that
+    // message, never the message above or its reactions.
+    openReactionPicker(bubble) {
+        const picker = this.getReactionPicker();
+        const panel = this.domCache.get('messages')?.closest('.chat-container');
+        if (!panel) return;
+
+        this.pickerBubble = bubble;
+        picker.classList.add('open');
+        const b = bubble.getBoundingClientRect();
+        const area = panel.getBoundingClientRect();
+        const { width, height } = picker.getBoundingClientRect();
+        const gap = 8;
+        const isSent = Boolean(bubble.closest('.message-sent'));
+
+        let left = isSent ? b.left : b.right - width;
+        left = Math.min(Math.max(left, area.left + gap), area.right - width - gap);
+
+        // Straddle the bubble's top edge; near the top of the panel, its bottom edge
+        let top = b.top - height / 2;
+        if (top < area.top + gap) top = b.bottom - height / 2;
+        top = Math.min(top, area.bottom - height - gap);
+
+        picker.style.left = `${Math.round(left)}px`;
+        picker.style.top = `${Math.round(top)}px`;
+        bubble.classList.add('picking');
+        bubble.querySelector('.react-btn')?.setAttribute('aria-expanded', 'true');
+        picker.querySelector('.quick-reaction')?.focus({ preventScroll: true });
+    }
+
+    closeReactionPicker() {
+        this.reactionPicker?.classList.remove('open');
+        if (this.pickerBubble) {
+            this.pickerBubble.classList.remove('picking');
+            this.pickerBubble.querySelector('.react-btn')?.setAttribute('aria-expanded', 'false');
+        }
+        this.pickerBubble = null;
     }
     
     handleTyping() {
@@ -2385,54 +2640,6 @@ class WatchTogetherApp {
             
             messages.appendChild(typingIndicator);
             messages.scrollTop = messages.scrollHeight;
-        }
-    }
-    
-    addReactionToMessage(messageElement, emoji, username) {
-        let reactionsContainer = messageElement.querySelector('.message-reactions');
-        if (!reactionsContainer) {
-            reactionsContainer = document.createElement('div');
-            reactionsContainer.className = 'message-reactions';
-            const messageBubble = messageElement.querySelector('.message-bubble:last-child');
-            if (messageBubble) {
-                messageBubble.appendChild(reactionsContainer);
-            }
-        }
-        
-        // Find existing reaction or create new one
-        let reaction = reactionsContainer.querySelector(`[data-emoji="${emoji}"]`);
-        if (!reaction) {
-            reaction = document.createElement('div');
-            reaction.className = 'reaction';
-            reaction.dataset.emoji = emoji;
-            reaction.dataset.users = JSON.stringify([username]);
-            reaction.innerHTML = `
-                <span class="reaction-emoji">${emoji}</span>
-                <span class="reaction-count">1</span>
-            `;
-            reactionsContainer.appendChild(reaction);
-        } else {
-            const countSpan = reaction.querySelector('.reaction-count');
-            let users = JSON.parse(reaction.dataset.users || '[]');
-            const userIndex = users.indexOf(username);
-            if (userIndex > -1) {
-                // User already reacted, remove their reaction
-                users.splice(userIndex, 1);
-                const currentCount = parseInt(countSpan.textContent) || 0;
-                countSpan.textContent = currentCount - 1;
-                if (users.length === 0) {
-                    // No more reactions, remove the element
-                    reaction.remove();
-                } else {
-                    reaction.dataset.users = JSON.stringify(users);
-                }
-            } else {
-                // User hasn't reacted, add their reaction
-                users.push(username);
-                const currentCount = parseInt(countSpan.textContent) || 0;
-                countSpan.textContent = currentCount + 1;
-                reaction.dataset.users = JSON.stringify(users);
-            }
         }
     }
 }

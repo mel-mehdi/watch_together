@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   # Main application
   app:
@@ -9,7 +7,9 @@ services:
       - "${PORT:-3000}:3000"
     environment:
       - NODE_ENV=production
-      - MONGODB_URI=mongodb://mongo:27017/watch-together
+      # MONGO_URI (not MONGODB_URI): the app reads MONGO_URI first, and this
+      # value must override the localhost one in .env inside the container
+      - MONGO_URI=mongodb://mongo:27017/watch-together
       - PORT=3000
     env_file:
       - .env

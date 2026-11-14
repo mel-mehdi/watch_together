@@ -1,0 +1,224 @@
+/* ======================================================================
+   Motion: entrance, scroll and feedback animations for every page.
+   Loaded after each page's own stylesheet. Turned off entirely for people
+   who ask their system for reduced motion (see the end of this file).
+   ====================================================================== */
+
+:root {
+    --wt-ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+    --wt-ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+@keyframes wt-fade-up {
+    from { opacity: 0; transform: translateY(18px); }
+    to   { opacity: 1; transform: none; }
+}
+
+@keyframes wt-fade-in {
+    from { opacity: 0; }
+    to   { opacity: 1; }
+}
+
+@keyframes wt-slide-right {
+    from { opacity: 0; transform: translateX(-24px); }
+    to   { opacity: 1; transform: none; }
+}
+
+@keyframes wt-float {
+    0%, 100% { transform: translateY(0); }
+    50%      { transform: translateY(-10px); }
+}
+
+@keyframes wt-bubble-in {
+    from { opacity: 0; transform: translateY(10px) scale(0.95); }
+    to   { opacity: 1; transform: none; }
+}
+
+@keyframes wt-pop {
+    0%   { transform: scale(0.5); opacity: 0; }
+    70%  { transform: scale(1.15); opacity: 1; }
+    100% { transform: scale(1); }
+}
+
+@keyframes wt-bump {
+    0%   { transform: scale(1); }
+    40%  { transform: scale(1.25); }
+    100% { transform: scale(1); }
+}
+
+@keyframes wt-video-in {
+    from { opacity: 0; transform: scale(0.97); }
+    to   { opacity: 1; transform: none; }
+}
+
+@keyframes wt-glow {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(124, 58, 237, 0); }
+    50%      { box-shadow: 0 0 0 6px rgba(124, 58, 237, 0.18); }
+}
+
+/* ---------------------------------------------------------------- Home */
+
+/* Hero text, buttons and code box rise in one after another */
+.hero-content > * {
+    animation: wt-fade-up 0.8s var(--wt-ease-out) both;
+}
+.hero-content > *:nth-child(1) { animation-delay: 0.05s; }
+.hero-content > *:nth-child(2) { animation-delay: 0.15s; }
+.hero-content > *:nth-child(3) { animation-delay: 0.25s; }
+.hero-content > *:nth-child(4) { animation-delay: 0.35s; }
+.hero-content > *:nth-child(5) { animation-delay: 0.45s; }
+.hero-content > *:nth-child(6) { animation-delay: 0.55s; }
+
+/* The preview screen fades in, then floats gently */
+.hero-visual {
+    animation: wt-fade-in 1s ease 0.3s both;
+}
+
+.mockup-screen {
+    animation: wt-float 6s ease-in-out 1.3s infinite;
+}
+
+/* Its chat lines appear one by one, like a conversation */
+.mockup-chat .chat-message {
+    animation: wt-bubble-in 0.6s var(--wt-ease-out) both;
+}
+.mockup-chat .chat-message:nth-child(1) { animation-delay: 0.9s; }
+.mockup-chat .chat-message:nth-child(2) { animation-delay: 1.5s; }
+.mockup-chat .chat-message:nth-child(3) { animation-delay: 2.1s; }
+
+/* The main call to action breathes softly once the page has settled */
+.create-room-btn {
+    animation: wt-glow 2.8s ease-in-out 1.5s 3;
+}
+
+/* Scroll reveal: motion.js adds these classes to sections below the fold
+   and removes them once shown, so hover effects keep working */
+.wt-reveal {
+    opacity: 0;
+    transform: translateY(28px);
+    transition:
+        opacity 0.8s var(--wt-ease-out) var(--wt-delay, 0s),
+        transform 0.8s var(--wt-ease-out) var(--wt-delay, 0s);
+}
+
+.wt-reveal.is-visible {
+    opacity: 1;
+    transform: none;
+}
+
+/* Feature icons turn a little on hover */
+.feature-card .feature-icon {
+    transition: transform 0.4s var(--wt-ease-spring);
+}
+
+.feature-card:hover .feature-icon {
+    transform: rotate(-8deg) scale(1.1);
+}
+
+/* --------------------------------------------------------------- Login */
+
+.welcome-content > * {
+    animation: wt-fade-up 0.8s var(--wt-ease-out) both;
+}
+.welcome-content > *:nth-child(1) { animation-delay: 0.05s; }
+.welcome-content > *:nth-child(2) { animation-delay: 0.15s; }
+.welcome-content > *:nth-child(3) { animation-delay: 0.25s; }
+
+.features-grid .feature-item {
+    animation: wt-slide-right 0.7s var(--wt-ease-out) both;
+}
+.features-grid .feature-item:nth-child(1) { animation-delay: 0.35s; }
+.features-grid .feature-item:nth-child(2) { animation-delay: 0.45s; }
+.features-grid .feature-item:nth-child(3) { animation-delay: 0.55s; }
+.features-grid .feature-item:nth-child(4) { animation-delay: 0.65s; }
+
+.form-container {
+    animation: wt-fade-up 0.8s var(--wt-ease-out) 0.2s both;
+}
+
+/* Switching between Sign In and Sign Up slides the new form in
+   (an animation replays whenever an element goes from hidden to shown) */
+#login-form,
+#register-form {
+    animation: wt-fade-up 0.45s var(--wt-ease-out) both;
+}
+
+/* ---------------------------------------------------------------- Room */
+
+/* Page opens with the chat sliding in and the player fading up */
+.chat-section {
+    animation: wt-slide-right 0.6s var(--wt-ease-out) both;
+}
+
+.video-section {
+    animation: wt-fade-in 0.7s ease 0.1s both;
+}
+
+/* A newly loaded video fades and settles into place (class set by main.js) */
+.video-container.wt-video-enter {
+    animation: wt-video-in 0.6s var(--wt-ease-out) both;
+}
+
+/* Reaction picker: emojis pop in one after another */
+.reaction-picker.open .quick-reaction {
+    animation: wt-pop 0.35s var(--wt-ease-spring) both;
+}
+.reaction-picker.open .quick-reaction:nth-child(1) { animation-delay: 0s; }
+.reaction-picker.open .quick-reaction:nth-child(2) { animation-delay: 0.03s; }
+.reaction-picker.open .quick-reaction:nth-child(3) { animation-delay: 0.06s; }
+.reaction-picker.open .quick-reaction:nth-child(4) { animation-delay: 0.09s; }
+.reaction-picker.open .quick-reaction:nth-child(5) { animation-delay: 0.12s; }
+
+/* A new reaction badge pops in; a changed count bumps (classes set by main.js) */
+.reaction.wt-new {
+    animation: wt-pop 0.4s var(--wt-ease-spring) both;
+}
+
+.reaction.wt-bump {
+    animation: wt-bump 0.35s var(--wt-ease-spring);
+}
+
+/* Buttons give a small press when clicked */
+#send,
+.change-video-btn,
+.voice-chat-btn,
+.header-btn,
+.react-btn {
+    transition: transform 0.15s var(--wt-ease-out), background var(--transition-fast), opacity var(--transition-fast), box-shadow var(--transition-fast);
+}
+
+#send:active,
+.change-video-btn:active,
+.voice-chat-btn:active,
+.header-btn:active {
+    transform: scale(0.92);
+}
+
+/* The send button tilts forward while hovered */
+#send:hover i {
+    transform: translateX(2px) rotate(-12deg);
+}
+
+#send i {
+    transition: transform 0.25s var(--wt-ease-spring);
+}
+
+/* ------------------------------------------------------ Reduced motion */
+
+@media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        animation-delay: 0s !important;
+        transition-duration: 0.01ms !important;
+        transition-delay: 0s !important;
+        scroll-behavior: auto !important;
+    }
+
+    .wt-reveal {
+        opacity: 1;
+        transform: none;
+    }
+}

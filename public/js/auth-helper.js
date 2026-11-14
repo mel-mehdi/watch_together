@@ -69,9 +69,9 @@
                         }
                         ${user.username}
                     </span>
-                    <button class="logout-btn" id="logout-btn">
+                    <button class="logout-btn" id="logout-btn" title="Logout" aria-label="Logout">
                         <i class="fas fa-sign-out-alt"></i>
-                        Logout
+                        <span class="logout-label">Logout</span>
                     </button>
                 </div>
             `;

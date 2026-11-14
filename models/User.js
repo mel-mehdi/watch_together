@@ -16,7 +16,8 @@ const userSchema = new mongoose.Schema({
     sparse: true, // Allow null values but enforce uniqueness when present
     trim: true,
     lowercase: true,
-    match: [/^\w+([.-]?\w+)*@\w+([.-]?\w+)*(\.\w{2,3})+$/, 'Please enter a valid email']
+    // Any domain ending of 2+ letters (.info, .online…) and "+" aliases are valid
+    match: [/^[^\s@]+@[^\s@]+\.[a-z]{2,}$/i, 'Please enter a valid email']
   },
   password: {
     type: String,

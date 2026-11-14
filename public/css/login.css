@@ -517,3 +517,21 @@ body::before {
         padding: 24px 16px;
     }
 }
+
+/* Phones and tablets: keep the brand header short and drop the feature
+   cards, so the sign-in form is visible without scrolling */
+@media (max-width: 768px) {
+    .welcome-section {
+        min-height: 0;
+        padding: 28px 20px 8px;
+    }
+
+    .welcome-content h1 {
+        font-size: 2rem;
+        gap: 12px;
+    }
+
+    .features-grid {
+        display: none;
+    }
+}

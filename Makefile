@@ -19,6 +19,6 @@ clean:
 
 # Start with Docker Compose
 docker:
-	docker-compose up -d
+	docker compose up -d
 
 .PHONY: all clean install docker

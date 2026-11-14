@@ -21,6 +21,7 @@
     
     <!-- Stylesheets -->
     <link rel="stylesheet" href="/css/styles.css">
+    <link rel="stylesheet" href="/css/motion.css">
 </head>
 <body>
     <!-- Username Modal -->
@@ -61,7 +62,7 @@
         <div class="modal-content">
             <div class="modal-header">
                 <h2><i class="fas fa-user-plus"></i> Invite Friends to Room</h2>
-                <button class="modal-close" id="close-invite-modal">
+                <button class="modal-close" id="close-invite-modal" aria-label="Close">
                     <i class="fas fa-times"></i>
                 </button>
             </div>
@@ -74,7 +75,7 @@
             <div class="invite-link-container">
                 <div class="invite-link-display">
                     <input type="text" id="invite-link" readonly placeholder="Room join link...">
-                    <button id="copy-invite-link" class="copy-btn" disabled>
+                    <button id="copy-invite-link" class="copy-btn" disabled title="Copy link" aria-label="Copy link">
                         <i class="fas fa-copy"></i>
                     </button>
                 </div>
@@ -172,13 +173,6 @@
         <div class="video-section">
             <!-- Video Player Container -->
             <div class="video-container">
-    
-                <!-- Admin Viewing Notice -->
-                <div class="admin-viewing-notice" id="admin-viewing-notice">
-                    <i class="fas fa-crown"></i>
-                    Admin is controlling playback
-                </div>
-                
                 <!-- Video Players -->
                 <video id="direct-video-player" controls class="video-player">
                     <source src="" type="video/mp4">
@@ -197,8 +191,9 @@
                 <input type="text" class="video-url-input" id="video-url" 
                     placeholder="Paste any video URL (YouTube, Vimeo, direct MP4, etc.)" 
                     maxlength="2000">
-                <button class="change-video-btn" id="change-video">
+                <button class="change-video-btn" id="change-video" title="Load video for everyone" aria-label="Load video for everyone">
                     <i class="fas fa-play"></i>
+                    <span class="change-video-label">Load</span>
                 </button>
             </div>
             
@@ -227,7 +222,7 @@
         <div class="modal-content">
             <div class="modal-header">
                 <h2><i class="fas fa-cog"></i> Room Settings</h2>
-                <button class="modal-close" id="close-room-settings-modal">
+                <button class="modal-close" id="close-room-settings-modal" aria-label="Close">
                     <i class="fas fa-times"></i>
                 </button>
             </div>

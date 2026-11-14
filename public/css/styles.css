@@ -3125,3 +3125,452 @@ body {
 .admin-request-modal #reject-admin-request:active {
     transform: translateY(0);
 }
+/* ======================================================================
+   Room layout fixes
+   ====================================================================== */
+
+/* The room fills exactly one screen; only the chat list scrolls */
+.main-container {
+    height: 100vh;
+    height: 100dvh;
+    min-height: 0;
+}
+
+.chat-section,
+.video-section {
+    min-height: 0;
+    height: 100%;
+}
+
+.chat-container {
+    min-height: 0;
+    max-height: none;
+}
+
+.chat-container::before {
+    position: absolute;
+    width: 100%;
+    height: 100%;
+}
+
+/* Desktop: center the player in its column and size it to the screen
+   height, instead of pinning it to the top with empty space below */
+.video-section {
+    justify-content: center;
+    align-items: center;
+}
+
+.video-container,
+.video-controls {
+    width: min(100%, calc((100dvh - 150px) * 16 / 9));
+}
+
+.video-container {
+    height: auto;
+    padding-bottom: 0;
+    aspect-ratio: 16 / 9;
+}
+
+/* URL bar: same height as the button, readable text */
+.video-controls {
+    padding: 0;
+}
+
+.video-url-input {
+    height: 44px;
+    padding: 0 14px;
+    font-size: 14px;
+}
+
+.change-video-btn,
+.change-video-btn:hover {
+    height: 44px;
+    padding: 0 18px;
+    font-size: 14px;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    align-self: auto;
+}
+
+/* Chat: always show who wrote a received message (it used to appear only
+   on mouse hover, so phone users never saw it); your own stay unlabeled */
+.message-received .message-header {
+    opacity: 1;
+}
+
+.message-received .message-timestamp {
+    opacity: 0;
+    transition: var(--transition-fast);
+}
+
+.message-received:hover .message-timestamp {
+    opacity: 0.8;
+}
+
+/* Tablets and phones: video on top, chat underneath, full width */
+@media (max-width: 900px) {
+    .main-container {
+        flex-direction: column;
+    }
+
+    .video-section {
+        order: -1;
+        flex: 0 0 auto;
+        height: auto;
+        padding: 12px;
+        gap: 10px;
+        overflow: visible;
+        border-bottom: 1px solid var(--border-color);
+    }
+
+    .video-container,
+    .video-controls {
+        width: 100%;
+    }
+
+    .video-container {
+        border-radius: var(--radius-md);
+    }
+
+    .chat-section {
+        width: 100%;
+        min-width: 0;
+        max-width: none;
+        flex: 1 1 auto;
+        height: auto;
+        min-height: 0;
+        border-right: none;
+    }
+
+    .message-input-container {
+        border-radius: 0;
+    }
+
+    .video-url-input,
+    .change-video-btn {
+        height: 40px;
+    }
+
+    .video-url-input {
+        font-size: 16px; /* stops iOS zooming into the field */
+    }
+}
+
+@media (max-width: 480px) {
+    .video-section {
+        padding: 8px;
+        gap: 8px;
+    }
+
+    .change-video-label {
+        display: none;
+    }
+
+    .change-video-btn,
+    .change-video-btn:hover {
+        padding: 0 14px;
+    }
+}
+
+/* Show usernames exactly as people typed them */
+.message-username {
+    text-transform: none;
+}
+
+/* ======================================================================
+   Reactions
+   ====================================================================== */
+
+/* Leave room beside every bubble for the 😊 button */
+.message-group {
+    max-width: calc(100% - 40px);
+}
+
+/* 😊 "add reaction" button, beside the bubble on the open side */
+.react-btn {
+    position: absolute;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 28px;
+    height: 28px;
+    border-radius: var(--radius-full);
+    border: 1px solid var(--border-color);
+    background: var(--bg-card);
+    color: var(--text-secondary);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 14px;
+    cursor: pointer;
+    opacity: 0;
+    transition: opacity var(--transition-fast), color var(--transition-fast), background var(--transition-fast);
+    z-index: 3;
+}
+
+.message-received .react-btn { left: calc(100% + 6px); }
+.message-sent .react-btn { right: calc(100% + 6px); }
+
+.message-bubble:hover .react-btn,
+.message-bubble.picking .react-btn,
+.react-btn:focus-visible {
+    opacity: 1;
+}
+
+.react-btn:hover,
+.message-bubble.picking .react-btn {
+    color: var(--text-primary);
+    background: var(--primary-color);
+    border-color: var(--primary-color);
+}
+
+/* Touch screens have no hover: keep the button faintly visible */
+@media (hover: none) {
+    .react-btn {
+        opacity: 0.55;
+    }
+}
+
+/* The picker: closed until the 😊 button is pressed; it no longer appears on
+   hover, slides, or sits on top of the sender's name by surprise */
+.message-quick-reactions,
+.message-bubble:hover .message-quick-reactions {
+    top: auto;
+    bottom: calc(100% + 6px);
+    left: auto;
+    right: auto;
+    transform: none;
+    padding: 4px;
+    gap: 2px;
+    border-radius: var(--radius-full);
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+    transition: opacity var(--transition-fast), visibility var(--transition-fast);
+    z-index: 20;
+    box-shadow: var(--shadow-lg);
+}
+
+.message-received .message-quick-reactions { left: 0; }
+.message-sent .message-quick-reactions { right: 0; }
+
+.message-quick-reactions.below {
+    bottom: auto;
+    top: calc(100% + 6px);
+}
+
+.message-quick-reactions.open {
+    opacity: 1;
+    visibility: visible;
+    pointer-events: auto;
+}
+
+.quick-reaction {
+    border: none;
+    background: transparent;
+    font-size: 20px;
+    line-height: 1;
+    width: 36px;
+    height: 36px;
+    padding: 0;
+    border-radius: var(--radius-full);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    transition: background var(--transition-fast), transform var(--transition-fast);
+}
+
+.quick-reaction:hover,
+.quick-reaction:focus-visible {
+    background: rgba(255, 255, 255, 0.12);
+    transform: scale(1.15);
+    outline: none;
+}
+
+/* Badges sit under the bubble, overlapping its bottom edge, instead of
+   stretching the bubble */
+.message-reactions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    margin-top: -8px;
+    margin-bottom: 4px;
+    padding: 0 10px;
+    position: relative;
+    z-index: 2;
+}
+
+.message-reactions:empty {
+    display: none;
+}
+
+.message-sent .message-reactions {
+    justify-content: flex-end;
+}
+
+.reaction {
+    font: inherit;
+    color: var(--text-primary);
+    background: var(--bg-card);
+    border: 2px solid var(--bg-chat);
+    border-radius: var(--radius-full);
+    padding: 1px 8px 1px 6px;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    cursor: pointer;
+    transition: background var(--transition-fast), transform var(--transition-fast);
+}
+
+.reaction:hover {
+    background: var(--msg-received);
+    transform: translateY(-1px);
+}
+
+/* Your own reaction is highlighted; tap it again to remove it */
+.reaction.mine {
+    background: rgba(124, 58, 237, 0.35);
+    box-shadow: inset 0 0 0 1px var(--primary-light);
+}
+
+.reaction-emoji {
+    font-size: 14px;
+    line-height: 1;
+}
+
+.reaction-count {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+@media (max-width: 480px) {
+    .quick-reaction {
+        width: 40px;
+        height: 40px;
+        font-size: 22px;
+    }
+}
+
+/* --- Reaction picker fixes --------------------------------------------- */
+
+/* An open picker must stay visible while the mouse is over its message (the
+   hover rule above is more specific than .open, which hid it under the cursor) */
+.message-quick-reactions.open,
+.message-bubble:hover .message-quick-reactions.open {
+    opacity: 1;
+    visibility: visible;
+    pointer-events: auto;
+}
+
+/* No lift on hover: the 1-2px jump moved targets under the cursor, and the
+   transform trapped the picker underneath the message above it */
+.message-group:hover,
+.message-bubble:hover {
+    transform: none;
+}
+
+/* The message whose picker is open is drawn above its neighbours */
+.message-group.picking {
+    position: relative;
+    z-index: 30;
+}
+
+/* Only the badges themselves take clicks, not the empty row around them */
+.message-reactions {
+    pointer-events: none;
+}
+
+.message-reactions .reaction {
+    pointer-events: auto;
+}
+
+/* --- Shared reaction picker ------------------------------------------- */
+
+/* Floats over the page, placed by openReactionPicker() on the top edge of
+   the message being reacted to */
+.reaction-picker {
+    position: fixed;
+    z-index: 1000;
+    display: flex;
+    gap: 2px;
+    padding: 4px;
+    background: var(--bg-card);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-full);
+    box-shadow: var(--shadow-lg);
+    opacity: 0;
+    visibility: hidden;
+    transform: scale(0.92);
+    transition: opacity var(--transition-fast), transform var(--transition-fast), visibility var(--transition-fast);
+}
+
+.reaction-picker.open {
+    opacity: 1;
+    visibility: visible;
+    transform: scale(1);
+}
+
+/* Invisible bridge across the 6px gap between a bubble and its 😊 button,
+   so the button doesn't fade out while the mouse travels to it */
+.message-bubble[data-message-id]::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 40px;
+}
+
+.message-received .message-bubble[data-message-id]::after { left: 100%; }
+.message-sent .message-bubble[data-message-id]::after { right: 100%; }
+
+/* Keep the 😊 button above the bridge */
+.react-btn {
+    z-index: 4;
+}
+
+/* ======================================================================
+   Video history: real titles, channel and thumbnail
+   ====================================================================== */
+
+/* Titles get up to two lines before being cut with "…" */
+.video-history-title {
+    white-space: normal;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    line-height: 1.35;
+    margin-bottom: 2px;
+}
+
+.video-history-channel {
+    font-size: 12px;
+    color: var(--text-secondary);
+    margin-bottom: 4px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* Thumbnail image in 16:9, in place of the icon */
+.video-history-thumbnail.has-image {
+    width: 96px;
+    height: 54px;
+    padding: 0;
+    overflow: hidden;
+    background: #000;
+}
+
+.video-history-thumbnail.has-image img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+}
+
+@media (max-width: 480px) {
+    .video-history-thumbnail.has-image {
+        width: 80px;
+        height: 45px;
+    }
+}

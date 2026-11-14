@@ -13,6 +13,16 @@ const cors = require('cors');
 // Load environment variables
 dotenv.config();
 
+// Online, refuse to start without real secrets: the code's fallback values are
+// public, so anyone could forge login tokens with them
+if (process.env.NODE_ENV === 'production') {
+    const missing = ['JWT_SECRET', 'SESSION_SECRET'].filter(name => !process.env[name]);
+    if (missing.length) {
+        console.error(`Missing required environment variable(s): ${missing.join(', ')}. Set them on your host and restart.`);
+        process.exit(1);
+    }
+}
+
 // Flag for database availability
 let isDatabaseConnected = false;
 let dbConnectionPromise = null;
@@ -97,14 +107,21 @@ app.use((req, res, next) => {
     next();
 });
 
-// Session configuration
+const mongoUrlForStore = process.env.MONGO_URI || process.env.MONGODB_URI || process.env.MONGO_URL;
+
+// Behind a host's proxy (Render, Docker + nginx), trust its HTTPS headers
+app.set('trust proxy', 1);
+
+// Session configuration. Sessions are kept in MongoDB whenever a database
+// address is configured (the old check ran before the database had connected,
+// so sessions always ended up in memory and were lost on every restart)
 app.use(session({
     secret: process.env.SESSION_SECRET || 'fallback-session-secret',
     resave: false,
     saveUninitialized: false,
-    store: isDatabaseConnected ? MongoStore.create({
-        mongoUrl: process.env.MONGO_URI
-    }) : undefined, // Use memory store if no database
+    store: mongoUrlForStore ? MongoStore.create({
+        mongoUrl: mongoUrlForStore
+    }) : undefined, // Memory store only when no database is configured
     cookie: {
         secure: false, // Set to true if using HTTPS
         httpOnly: true,
@@ -238,6 +255,39 @@ function sendSystemMessage(roomId, message, messageType = 'critical') {
     return shouldSend;
 }
 
+// Real title, channel and thumbnail of a video, from the provider's public
+// oEmbed lookup (no API key). Returns null for direct files or on any failure.
+const OEMBED_ENDPOINTS = {
+    youtube: 'https://www.youtube.com/oembed?format=json&url=',
+    vimeo: 'https://vimeo.com/api/oembed.json?url=',
+    dailymotion: 'https://www.dailymotion.com/services/oembed?format=json&url='
+};
+const videoInfoCache = new Map(); // url -> info, so repeat lookups are free
+
+async function fetchVideoInfo(url, type = detectVideoType(url)) {
+    const endpoint = OEMBED_ENDPOINTS[type];
+    if (!endpoint) return null;
+    if (videoInfoCache.has(url)) return videoInfoCache.get(url);
+
+    try {
+        const response = await fetch(endpoint + encodeURIComponent(url), { signal: AbortSignal.timeout(4000) });
+        if (!response.ok) return null;
+        const data = await response.json();
+        const httpsOnly = (value) => (typeof value === 'string' && value.startsWith('https://') ? value : undefined);
+        const info = {
+            title: typeof data.title === 'string' ? data.title.slice(0, 200) : undefined,
+            author: typeof data.author_name === 'string' ? data.author_name.slice(0, 100) : undefined,
+            thumbnail: httpsOnly(data.thumbnail_url)
+        };
+        if (videoInfoCache.size > 500) videoInfoCache.clear();
+        videoInfoCache.set(url, info);
+        return info;
+    } catch (error) {
+        console.log(`Video title lookup failed for ${type}: ${error.message}`);
+        return null;
+    }
+}
+
 function detectVideoType(url) {
     if (!url) return 'unknown';
     
@@ -298,23 +348,25 @@ async function loadRecentMessages(roomId, limit = 50) {
 io.on('connection', async (socket) => {
     console.log('A user connected');
     
-    // Get user info from auth token if available
-    let authenticatedUser = null;
-    if (socket.handshake.auth?.token) {
+    // Get user info from auth token if available. Kept as a promise (not awaited
+    // here) so the event handlers below are registered synchronously: awaiting
+    // first made a 'join room' sent right after connecting get silently dropped.
+    const authenticatedUserPromise = (async () => {
+        if (!socket.handshake.auth?.token) return null;
         try {
             const jwt = require('jsonwebtoken');
             const decoded = jwt.verify(socket.handshake.auth.token, process.env.JWT_SECRET || 'fallback-secret-key');
-            if (decoded.userId) {
-                authenticatedUser = await User.findById(decoded.userId);
-            }
+            return decoded.userId ? await User.findById(decoded.userId) : null;
         } catch (error) {
             console.log('Invalid or expired token for socket connection');
+            return null;
         }
-    }
-    
+    })();
+
     // Handle joining a specific room
     socket.on('join room', async ({ roomId, username }) => {
         try {
+            const authenticatedUser = await authenticatedUserPromise;
             // Find the room in the database - handle both room codes and ObjectId
             let room;
             if (roomId.length === 8) {
@@ -380,10 +432,14 @@ io.on('connection', async (socket) => {
             }
 
             // Send current room state to the user
+            // While playing, the saved time is from the last play/seek: add the time since
+            const savedTime = room.videoState?.currentTime || 0;
+            const isPlaying = room.videoState?.playing || false;
+            const lastUpdated = room.videoState?.lastUpdated ? new Date(room.videoState.lastUpdated).getTime() : Date.now();
             socket.emit('video state', {
                 url: room.currentVideo?.url || '',
-                playing: room.videoState?.playing || false,
-                currentTime: room.videoState?.currentTime || 0,
+                playing: isPlaying,
+                currentTime: isPlaying ? savedTime + Math.max(0, (Date.now() - lastUpdated) / 1000) : savedTime,
                 videoType: room.currentVideo?.type || 'unknown'
             });
 
@@ -452,7 +508,10 @@ io.on('connection', async (socket) => {
         }
 
         const sanitizedMessage = msg.trim().substring(0, 500);
+        // Id known before saving, so viewers can react to the message right away
+        const messageId = new mongoose.Types.ObjectId();
         const messageData = {
+            id: messageId.toString(),
             username: user.username,
             avatar: user.avatar || '',
             message: sanitizedMessage,
@@ -467,6 +526,7 @@ io.on('connection', async (socket) => {
         if (isDatabaseConnected && user.roomId) {
             try {
                 const message = new Message({
+                    _id: messageId,
                     roomId: user.roomId,
                     user: user.userId,
                     username: user.username,
@@ -477,6 +537,35 @@ io.on('connection', async (socket) => {
             } catch (error) {
                 console.error('Database error saving chat message:', error.message);
             }
+        }
+    });
+
+    // Reactions: toggle this user's emoji on a message and share the result
+    const ALLOWED_REACTIONS = ['👍', '❤️', '😂', '😮', '😢'];
+    socket.on('message reaction', async (data) => {
+        const user = users[socket.id];
+        if (!user || !isDatabaseConnected) return;
+        const { messageId, emoji } = data || {};
+        if (!ALLOWED_REACTIONS.includes(emoji) || !mongoose.Types.ObjectId.isValid(messageId)) return;
+
+        try {
+            // Atomic toggle (safe when several people react at once):
+            // remove it if this user already reacted with it, otherwise add it
+            const filter = { _id: messageId, roomId: user.roomId };
+            const entry = { emoji, username: user.username };
+            const removed = await Message.updateOne(filter, { $pull: { reactions: entry } });
+            if (removed.matchedCount === 0) return; // not a message of this room
+            if (removed.modifiedCount === 0) {
+                await Message.updateOne(filter, { $addToSet: { reactions: entry } });
+            }
+            const message = await Message.findById(messageId, 'reactions').lean();
+
+            io.to(user.roomId).emit('message reaction', {
+                messageId: message._id.toString(),
+                reactions: (message?.reactions || []).map(r => ({ emoji: r.emoji, username: r.username }))
+            });
+        } catch (error) {
+            console.error('Error saving reaction:', error.message);
         }
     });
     
@@ -517,90 +606,40 @@ io.on('connection', async (socket) => {
         console.log(`Admin ${user.username} updated system message config for room ${user.roomId}:`, newConfig);
     });
     
-    // Handle video play event
-    socket.on('video play', async (time) => {
+    // Play / pause / seek: anyone in the room controls playback for everyone
+    // (changing the video itself stays admin-only, see 'change video').
+    const handlePlayback = (kind) => async (time) => {
         const user = users[socket.id];
         if (!user) {
             socket.emit('system message', 'Please join a room first');
             return;
         }
-        
-        // Only admin can control video for everyone in the room
-        if (roomAdmins.get(user.roomId) === socket.id) {
-            try {
-                const room = await Room.findById(user.roomId);
-                if (room) {
-                    room.videoState.playing = true;
-                    room.videoState.currentTime = time;
-                    room.videoState.lastUpdated = new Date();
-                    await room.save();
-                }
-                
-                // Broadcast to other users in the same room
-                socket.to(user.roomId).emit('video play', {
-                    time: time,
-                    serverTime: Date.now()
-                });
-            } catch (error) {
-                console.error('Error updating video play state:', error);
+        time = Number(time);
+        if (!Number.isFinite(time) || time < 0) return;
+
+        // Broadcast first so other viewers react without waiting for the database
+        if (kind === 'seek') {
+            socket.to(user.roomId).emit('video seek', time);
+        } else {
+            socket.to(user.roomId).emit(`video ${kind}`, { time, serverTime: Date.now(), by: user.username });
+        }
+
+        try {
+            const room = await Room.findById(user.roomId);
+            if (room) {
+                if (kind === 'play') room.videoState.playing = true;
+                if (kind === 'pause') room.videoState.playing = false;
+                room.videoState.currentTime = time;
+                room.videoState.lastUpdated = new Date();
+                await room.save();
             }
+        } catch (error) {
+            console.error(`Error saving video ${kind} state:`, error);
         }
-    });
-    
-    // Handle video pause event
-    socket.on('video pause', async (time) => {
-        const user = users[socket.id];
-        if (!user) {
-            socket.emit('system message', 'Please join a room first');
-            return;
-        }
-        
-        // Only admin can control video for everyone in the room
-        if (roomAdmins.get(user.roomId) === socket.id) {
-            try {
-                const room = await Room.findById(user.roomId);
-                if (room) {
-                    room.videoState.playing = false;
-                    room.videoState.currentTime = time;
-                    room.videoState.lastUpdated = new Date();
-                    await room.save();
-                }
-                
-                // Broadcast to other users in the same room
-                socket.to(user.roomId).emit('video pause', {
-                    time: time,
-                    serverTime: Date.now()
-                });
-            } catch (error) {
-                console.error('Error updating video pause state:', error);
-            }
-        }
-    });
-    
-    // Handle video seek event
-    socket.on('video seek', async (time) => {
-        const user = users[socket.id];
-        if (!user) {
-            socket.emit('system message', 'Please join a room first');
-            return;
-        }
-        
-        // Only admin can control video for everyone in the room
-        if (roomAdmins.get(user.roomId) === socket.id) {
-            try {
-                const room = await Room.findById(user.roomId);
-                if (room) {
-                    room.videoState.currentTime = time;
-                    room.videoState.lastUpdated = new Date();
-                    await room.save();
-                }
-                
-                socket.to(user.roomId).emit('video seek', time);
-            } catch (error) {
-                console.error('Error updating video seek state:', error);
-            }
-        }
-    });
+    };
+    socket.on('video play', handlePlayback('play'));
+    socket.on('video pause', handlePlayback('pause'));
+    socket.on('video seek', handlePlayback('seek'));
     
     // Handle time synchronization
     socket.on('sync time', async (time) => {
@@ -632,12 +671,27 @@ io.on('connection', async (socket) => {
             return;
         }
         
-        // Only admin can change video for everyone in the room
-        if (roomAdmins.get(user.roomId) === socket.id) {
+        // Anyone in the room can load a video for everyone. Only plain web links
+        // are accepted: the URL ends up in a frame on every viewer's page, so a
+        // "javascript:" or "data:" address would run code in their browsers.
+        if (typeof url !== 'string' || url.trim().length === 0 || url.length > 2000) {
+            socket.emit('error message', 'Please paste a valid video link');
+            return;
+        }
+        url = url.trim();
+        let parsed;
+        try { parsed = new URL(url); } catch { parsed = null; }
+        if (!parsed || !['http:', 'https:'].includes(parsed.protocol)) {
+            socket.emit('error message', 'Only http:// or https:// video links can be loaded');
+            return;
+        }
+
+        {
             try {
                 const videoType = detectVideoType(url);
+                const infoPromise = fetchVideoInfo(url, videoType); // runs while we save
                 const room = await Room.findById(user.roomId);
-                
+
                 if (room) {
                     room.currentVideo = {
                         url: url,
@@ -649,22 +703,26 @@ io.on('connection', async (socket) => {
                         lastUpdated: new Date()
                     };
                     await room.save();
-                    
-                    // Save to video history
-                    if (isDatabaseConnected) {
-                        const videoHistory = new VideoHistory({
-                            roomId: user.roomId,
-                            url: url,
-                            type: videoType,
-                            addedBy: user.userId,
-                            addedByUsername: user.username
-                        });
-                        await videoHistory.save();
-                    }
                 }
-                
-                // Broadcast to all users in the room
+
+                // Broadcast to all users in the room (not waiting for the title lookup)
                 io.to(user.roomId).emit('change video', url);
+
+                // Save to video history, with the real title when the provider has one
+                if (room && isDatabaseConnected) {
+                    const info = await infoPromise;
+                    const videoHistory = new VideoHistory({
+                        roomId: user.roomId,
+                        url: url,
+                        type: videoType,
+                        title: info?.title,
+                        author: info?.author,
+                        thumbnail: info?.thumbnail,
+                        addedBy: user.userId,
+                        addedByUsername: user.username
+                    });
+                    await videoHistory.save();
+                }
                 
                 const systemMessage = `${user.username} changed the video`;
                 const messageSent = sendSystemMessage(user.roomId, systemMessage, 'video-change');
@@ -698,11 +756,24 @@ io.on('connection', async (socket) => {
                 const history = await VideoHistory.find({ roomId: user.roomId })
                     .sort({ watchedAt: -1 })
                     .limit(20)
-                    .select('url type addedByUsername watchedAt');
-                
+                    .select('url type title author thumbnail addedByUsername watchedAt');
+
+                // Entries saved before titles existed get theirs now (once; saved back)
+                await Promise.all(history.filter(item => !item.title).map(async item => {
+                    const info = await fetchVideoInfo(item.url, item.type);
+                    if (!info?.title) return;
+                    item.title = info.title;
+                    item.author = info.author;
+                    item.thumbnail = info.thumbnail;
+                    await VideoHistory.updateOne({ _id: item._id }, { $set: info }).catch(() => {});
+                }));
+
                 const formattedHistory = history.map(item => ({
                     url: item.url,
                     type: item.type,
+                    title: item.title || null,
+                    author: item.author || null,
+                    thumbnail: item.thumbnail || null,
                     changedBy: item.addedByUsername,
                     timestamp: item.watchedAt
                 }));
