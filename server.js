@@ -24,6 +24,14 @@ if (process.env.NODE_ENV === 'production') {
     }
 }
 
+// The app is built to keep serving pages when the database is unreachable or
+// rejects its login. Database drivers (the session store in particular) can
+// report such failures as promise rejections nobody awaits, which would crash
+// the whole server; log them instead and keep running.
+process.on('unhandledRejection', (reason) => {
+    console.error('Unhandled promise rejection (server keeps running):', reason && reason.message ? reason.message : reason);
+});
+
 // Flag for database availability
 let isDatabaseConnected = false;
 let dbConnectionPromise = null;
