@@ -9,6 +9,7 @@ const connectDB = require('./config/db');
 const passport = require('passport');
 const GoogleStrategy = require('passport-google-oauth20').Strategy;
 const cors = require('cors');
+const path = require('path');
 
 // Load environment variables
 dotenv.config();
@@ -1001,7 +1002,8 @@ io.on('connection', async (socket) => {
 });
 
 // Serve static files from public directory
-app.use(express.static('public'));
+// Absolute path, so files are found whatever folder the host starts the app from
+app.use(express.static(path.join(__dirname, 'public')));
 
 // Mount routes
 app.use('/api/auth', authRoutes);

@@ -400,3 +400,5 @@ debug_login.html
 *.avi
 *.mov
 
+# Vercel CLI folder
+.vercel
