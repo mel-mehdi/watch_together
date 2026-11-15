@@ -254,22 +254,12 @@
         }
 
         function signInWithGoogle() {
-            // Check if Google OAuth is configured by making a test request
-            fetch('/api/auth/google', {
-                method: 'HEAD',
-                redirect: 'manual'
-            }).then(response => {
-                if (response.type === 'opaqueredirect' || response.status === 302) {
-                    // Google OAuth is configured, redirect to it
-                    window.location.href = '/api/auth/google';
-                } else {
-                    // Google OAuth is not configured
-                    showError('Google Sign-In is not configured. Please use email/password login or contact the administrator.');
-                }
-            }).catch(error => {
-                // Fallback: try direct redirect (for backward compatibility)
-                window.location.href = '/api/auth/google';
-            });
+            // Go straight to the server's Google route. If Google is not set up,
+            // the server sends people back here with ?error=google_not_configured,
+            // which shows the right message. (The old pre-check request reported
+            // "not configured" for any non-redirect answer, e.g. when the site
+            // was briefly offline.)
+            window.location.href = '/api/auth/google';
         }
 
         // Handle login form submission
