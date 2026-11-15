@@ -112,7 +112,9 @@ app.use('/api', async (req, res, next) => {
 
 // Debug middleware to log all requests
 app.use((req, res, next) => {
-    console.log(`🔍 Request: ${req.method} ${req.url}`);
+    // Never write login tokens or OAuth codes into the logs
+    const safeUrl = req.url.replace(/([?&#](token|code|state)=)[^&#]*/gi, '$1[hidden]');
+    console.log(`🔍 Request: ${req.method} ${safeUrl}`);
     next();
 });
 
@@ -155,38 +157,58 @@ if (process.env.GOOGLE_CLIENT_ID &&
       },
       async (accessToken, refreshToken, profile, done) => {
         try {
-          console.log('Google OAuth profile received:', profile.id, profile.emails[0]?.value, profile.displayName);
-          
+          const emailEntry = profile.emails && profile.emails[0];
+          const email = emailEntry && emailEntry.value ? emailEntry.value.trim().toLowerCase() : null;
+          const emailVerified = Boolean(emailEntry && emailEntry.verified !== false && profile._json?.email_verified !== false);
+          console.log('Google OAuth profile received:', profile.id);
+
           // Check if user already exists with this Google ID
           let user = await User.findOne({ googleId: profile.id });
-          
+
           if (user) {
             console.log('Existing Google user found:', user.username);
             return done(null, user);
           }
-          
-          // Check if user exists with same email
-          user = await User.findOne({ email: profile.emails[0].value });
-          
+
+          if (!email) {
+            return done(null, false, { message: 'Google did not share an email address' });
+          }
+
+          // Link to an existing account with the same email, but only when Google
+          // has verified that address (otherwise anyone could take over the account)
+          user = await User.findOne({ email });
+
           if (user) {
-            // Link Google account to existing user
+            if (!emailVerified) {
+              return done(null, false, { message: 'Google email not verified' });
+            }
             console.log('Linking Google account to existing user:', user.username);
             user.googleId = profile.id;
             user.provider = 'google';
             await user.save();
             return done(null, user);
           }
-          
-          // Create new user
-          const username = profile.displayName.replace(/\s+/g, '').toLowerCase() + Math.floor(Math.random() * 1000);
-          console.log('Creating new user from Google OAuth:', username, profile.emails[0].value);
-          
+
+          // New user: a clean username (letters, digits, _), within the 3-20
+          // character limit, not already taken. Long or non-Latin Google names
+          // used to break sign-up.
+          const base = (profile.displayName || email.split('@')[0] || 'user')
+            .normalize('NFKD').replace(/[̀-ͯ]/g, '')
+            .toLowerCase().replace(/[^a-z0-9_]/g, '').slice(0, 15) || 'user';
+          let username = null;
+          for (let attempt = 0; attempt < 10 && !username; attempt++) {
+            const candidate = `${base.length >= 3 ? base : 'user'}${Math.floor(1000 + Math.random() * 9000)}`;
+            if (!(await User.exists({ username: candidate }))) username = candidate;
+          }
+          if (!username) username = `user${Date.now().toString(36)}`.slice(0, 20);
+          console.log('Creating new user from Google OAuth:', username);
+
           user = new User({
             username: username,
-            email: profile.emails[0].value,
+            email,
             googleId: profile.id,
             provider: 'google',
-            avatar: profile.photos[0]?.value
+            avatar: profile.photos && profile.photos[0] ? profile.photos[0].value : undefined
           });
           
           await user.save();

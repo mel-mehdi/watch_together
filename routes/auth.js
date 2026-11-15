@@ -354,7 +354,9 @@ if (process.env.GOOGLE_CLIENT_ID &&
 
           console.log('Redirecting to home page with token for user:', req.user.username);
           // Redirect to home page with token
-          res.redirect(`/home.html?token=${token}`);
+          // Token after "#": browsers never send that part to the server, to
+          // logs or to other sites (a "?token=" was logged and could leak)
+          res.redirect(`/home.html#token=${encodeURIComponent(token)}`);
         } catch (error) {
           console.error('Google OAuth callback error:', error);
           res.redirect('/login.html?error=oauth_failed');

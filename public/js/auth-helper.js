@@ -1,8 +1,14 @@
 // Simple authentication handler for home page
 (function() {
-    // Check for OAuth token in URL first (from Google OAuth redirect)
+    // Check for OAuth token in URL first (from Google OAuth redirect). It arrives
+    // after "#" (never sent to servers); "?token=" is still read for old links.
+    const hashParams = new URLSearchParams(window.location.hash.replace(/^#/, ''));
     const urlParams = new URLSearchParams(window.location.search);
-    const urlToken = urlParams.get('token');
+    const urlToken = hashParams.get('token') || urlParams.get('token');
+    if (urlToken) {
+        // Remove it from the address bar and history straight away
+        window.history.replaceState({}, document.title, window.location.pathname);
+    }
     
     if (urlToken) {
         console.log('🔑 Found OAuth token in URL, storing it...');
