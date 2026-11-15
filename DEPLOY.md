@@ -52,11 +52,22 @@ Online, the server refuses to start without `JWT_SECRET` and `SESSION_SECRET`. I
 | `/health` disconnected, log says timeout | Atlas → *Security → Network Access* must allow `0.0.0.0/0`. Atlas also pauses free clusters after a long time unused: *Clusters → Resume*. |
 | Address no longer opens | The 60 minutes are over: **Action → Deploy the latest commit**. |
 
+## Google sign-in (set up)
+
+Works for any Google account (published, "In production").
+
+| Where | What |
+|---|---|
+| Google Cloud → project *Watch Together* → *Google Auth Platform → Clients* → **Watch Together OAuth** | Authorised JavaScript origin `https://watchtogether-05nn7mqb.back4.app`; redirect URIs `https://watchtogether-05nn7mqb.back4.app/api/auth/google/callback` and `http://localhost:3000/api/auth/google/callback` |
+| *Branding* | App name *Watch Together*, home page = the site, privacy policy = `/privacy.html` |
+| Back4app → Settings → Environment | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_CALLBACK_URL` (the live redirect URI above) |
+
+If the Back4app address ever changes, add the new address as an origin and redirect URI in the Google client, and update `GOOGLE_CALLBACK_URL`. Google keeps client secrets hidden after creation: if the secret is lost, use **Add secret** on the client and paste the new one into Back4app.
+
 ## Optional settings
 
 | Variable | For |
 |---|---|
-| `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_CALLBACK_URL` | "Sign in with Google". The callback is `https://<your-address>/api/auth/google/callback`, also added in Google Cloud Console. Needs a stable address, so not practical with the 60-minute free address. |
 | `EMAIL_HOST`, `EMAIL_PORT`, `EMAIL_USER`, `EMAIL_PASS`, `FROM_EMAIL` | Password-reset emails. With Gmail: `EMAIL_HOST=smtp.gmail.com` and an App Password as `EMAIL_PASS`. |
 
 ## Running it on your computer
