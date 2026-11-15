@@ -58,11 +58,15 @@ Works for any Google account (published, "In production").
 
 | Where | What |
 |---|---|
-| Google Cloud → project *Watch Together* → *Google Auth Platform → Clients* → **Watch Together OAuth** | Authorised JavaScript origin `https://watchtogether-05nn7mqb.back4.app`; redirect URIs `https://watchtogether-05nn7mqb.back4.app/api/auth/google/callback` and `http://localhost:3000/api/auth/google/callback` |
+| Google Cloud → project *Watch Together* → *Google Auth Platform → Clients* → **Watch Together OAuth** | For each site address: Authorised JavaScript origin `https://<address>` and redirect URI `https://<address>/api/auth/google/callback`. Plus `http://localhost:3000/api/auth/google/callback` for local runs. |
 | *Branding* | App name *Watch Together*, home page = the site, privacy policy = `/privacy.html` |
-| Back4app → Settings → Environment | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_CALLBACK_URL` (the live redirect URI above) |
+| Back4app → Settings → Environment | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` |
 
-If the Back4app address ever changes, add the new address as an origin and redirect URI in the Google client, and update `GOOGLE_CALLBACK_URL`. Google keeps client secrets hidden after creation: if the secret is lost, use **Add secret** on the client and paste the new one into Back4app.
+The server builds the redirect address from the address the visitor is on, so `GOOGLE_CALLBACK_URL` is no longer used (it can be deleted from Back4app).
+
+**If the Back4app address changes** (Google shows `Error 400: redirect_uri_mismatch`): add the new address as an origin and a redirect URI in the Google client and save. Google can take a few minutes to apply it. Keep the old entries if you like; they do no harm.
+
+Google keeps client secrets hidden after creation: if the secret is lost, use **Add secret** on the client and paste the new one into Back4app.
 
 ## Optional settings
 

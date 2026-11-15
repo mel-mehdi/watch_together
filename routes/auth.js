@@ -327,16 +327,30 @@ if (process.env.GOOGLE_CLIENT_ID &&
     process.env.GOOGLE_CLIENT_SECRET && 
     process.env.GOOGLE_CLIENT_ID !== 'your-google-client-id' && 
     process.env.GOOGLE_CLIENT_SECRET !== 'your-google-client-secret') {
-    
-    router.get('/google',
-      passport.authenticate('google', { scope: ['profile', 'email'] })
+
+    // Google must get back the exact address the visitor is on. The free
+    // Back4app address changes, so build it from the request instead of a
+    // fixed setting. Online the site is always https (the proxy in front
+    // talks plain http to the container).
+    const googleCallbackURL = (req) => {
+      const host = req.get('x-forwarded-host') || req.get('host');
+      const protocol = process.env.NODE_ENV === 'production' ? 'https' : req.protocol;
+      return `${protocol}://${host}/api/auth/google/callback`;
+    };
+
+    router.get('/google', (req, res, next) =>
+      passport.authenticate('google', {
+        scope: ['profile', 'email'],
+        callbackURL: googleCallbackURL(req)
+      })(req, res, next)
     );
 
     router.get('/google/callback',
-      passport.authenticate('google', { 
-         failureRedirect: '/login.html?error=oauth_failed',
-        failureFlash: false
-      }),
+      (req, res, next) => passport.authenticate('google', {
+        failureRedirect: '/login.html?error=oauth_failed',
+        failureFlash: false,
+        callbackURL: googleCallbackURL(req)
+      })(req, res, next),
       async (req, res) => {
         try {
           console.log('Google OAuth callback successful for user:', req.user?.username || req.user?.email);
