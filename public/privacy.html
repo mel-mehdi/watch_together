@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Privacy Policy – Watch Together</title>
+    <meta name="description" content="What Watch Together stores about you and why.">
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎬</text></svg>">
+    <style>
+        :root {
+            --bg: #0f0f23;
+            --card: #1a1a2e;
+            --border: #334155;
+            --text: #f8fafc;
+            --muted: #cbd5e1;
+            --accent: #a855f7;
+        }
+        * { box-sizing: border-box; }
+        body {
+            margin: 0;
+            background: var(--bg);
+            color: var(--text);
+            font: 16px/1.65 'Inter', 'Segoe UI', -apple-system, BlinkMacSystemFont, sans-serif;
+        }
+        main {
+            max-width: 760px;
+            margin: 0 auto;
+            padding: 48px 20px 64px;
+        }
+        a { color: var(--accent); }
+        h1 { font-size: 2rem; margin: 0 0 4px; }
+        h2 { font-size: 1.2rem; margin: 36px 0 8px; }
+        p, li { color: var(--muted); }
+        .updated { color: var(--muted); font-size: 0.9rem; margin-bottom: 28px; }
+        table { width: 100%; border-collapse: collapse; margin: 12px 0; font-size: 0.95rem; }
+        th, td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--border); vertical-align: top; }
+        th { color: var(--text); background: var(--card); }
+        td { color: var(--muted); }
+        .back { display: inline-block; margin-bottom: 24px; text-decoration: none; }
+        @media (max-width: 560px) {
+            h1 { font-size: 1.6rem; }
+            th, td { padding: 8px; }
+        }
+    </style>
+</head>
+<body>
+    <main>
+        <a class="back" href="/">← Back to Watch Together</a>
+        <h1>Privacy Policy</h1>
+        <p class="updated">Last updated: 15 November 2026</p>
+
+        <p>Watch Together is a small website for watching videos in sync with friends and chatting while you watch. This page explains what it stores, why, and how to have it removed.</p>
+
+        <h2>What we store</h2>
+        <table>
+            <thead>
+                <tr><th>Data</th><th>Why</th></tr>
+            </thead>
+            <tbody>
+                <tr><td>Your username and email address</td><td>To create your account and let you sign in. Your email is not shown to other users.</td></tr>
+                <tr><td>Your password, stored only as a one-way hash (bcrypt)</td><td>To check your password at sign-in. Nobody, including us, can read the original password.</td></tr>
+                <tr><td>If you sign in with Google: your Google account ID, name, email and profile picture link</td><td>To create or find your account. We ask Google only for your basic profile and email, nothing else.</td></tr>
+                <tr><td>Rooms you create, chat messages, reactions, and the video links played in a room (with their public titles and thumbnails)</td><td>So the room works: other people in the room see the chat, reactions and video history.</td></tr>
+                <tr><td>Technical session data (a session cookie and a login token kept in your browser)</td><td>To keep you signed in. You can remove them by logging out or clearing your browser data.</td></tr>
+            </tbody>
+        </table>
+
+        <p>We do not sell your data, show ads, or use analytics or tracking tools.</p>
+
+        <h2>Where it is stored</h2>
+        <p>The website runs on Back4app. The data above is stored in a MongoDB Atlas database hosted in the European Union (Paris).</p>
+
+        <h2>Other services the website uses</h2>
+        <ul>
+            <li><strong>Video players</strong> from YouTube, Vimeo, Dailymotion or the site a video link points to. When a video plays, that service receives your connection like any embedded video and applies its own privacy policy.</li>
+            <li><strong>Google Sign-In</strong>, only if you choose it.</li>
+            <li><strong>Google Fonts and cdnjs</strong>, which deliver the website's fonts and icons to your browser.</li>
+        </ul>
+
+        <h2>How long we keep it</h2>
+        <p>Your account and what you post stay until you ask us to delete them. Video players and other services keep their own data according to their policies.</p>
+
+        <h2>Your choices</h2>
+        <ul>
+            <li>You can log out at any time, which removes the login data from your browser.</li>
+            <li>You can ask us to delete your account and the messages you posted.</li>
+            <li>If you signed in with Google, you can also remove Watch Together's access in your Google Account settings, under <em>Security → Third-party connections</em>.</li>
+        </ul>
+
+        <h2>Contact</h2>
+        <p>For questions or deletion requests, open an issue on the project's page: <a href="https://github.com/mel-mehdi/watch_together/issues" rel="noopener">github.com/mel-mehdi/watch_together/issues</a>.</p>
+
+        <h2>Changes</h2>
+        <p>If this policy changes, the new version will be posted on this page with a new date.</p>
+    </main>
+</body>
+</html>
