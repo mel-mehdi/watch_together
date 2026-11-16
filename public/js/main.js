@@ -377,6 +377,7 @@ class VideoPlayerManager {
         this.player = null;
         this.vimeoPlayer = null;
         this.currentVideoUrl = '';
+        this.dailymotionPlayerIdPromise = null;
     }
 
     initialize(videoUrl) {
@@ -422,7 +423,12 @@ class VideoPlayerManager {
             case VIDEO_TYPES.DAILYMOTION:
             case VIDEO_TYPES.FACEBOOK:
             case VIDEO_TYPES.TWITCH:
-                this.setupProviderEmbed(videoUrl, this.appState.currentVideoType);
+                this.setupProviderEmbed(videoUrl, this.appState.currentVideoType).catch((error) => {
+                    console.error('Failed to configure video embed:', error);
+                    if (this.currentVideoUrl === videoUrl) {
+                        this.showUnsupportedVideoMessage('Could not load the video player configuration. Please try again.');
+                    }
+                });
                 break;
             case VIDEO_TYPES.NETFLIX:
                 this.showExternalVideoMessage(
@@ -467,7 +473,7 @@ class VideoPlayerManager {
         this.setupYouTubeEventHandlers(videoPlayer, videoUrl);
     }
 
-    setupProviderEmbed(videoUrl, type) {
+    async setupProviderEmbed(videoUrl, type) {
         let parsedUrl;
         try {
             parsedUrl = new URL(videoUrl);
@@ -495,7 +501,18 @@ class VideoPlayerManager {
                 this.showUnsupportedVideoMessage('Could not find a Dailymotion video ID in that link.');
                 return;
             }
-            embedUrl = `https://www.dailymotion.com/embed/video/${encodeURIComponent(videoId)}`;
+            const playerId = await this.getDailymotionPlayerId();
+            if (this.currentVideoUrl !== videoUrl) return;
+            if (!playerId) {
+                this.showExternalVideoMessage(
+                    'Dailymotion requires a Player ID configured for your website. Add DAILYMOTION_PLAYER_ID to the server environment, then reload the room.',
+                    videoUrl,
+                    'Open on Dailymotion'
+                );
+                return;
+            }
+            const params = new URLSearchParams({ video: videoId });
+            embedUrl = `https://geo.dailymotion.com/player/${encodeURIComponent(playerId)}.html?${params}`;
         } else if (type === VIDEO_TYPES.TWITCH) {
             const path = parsedUrl.pathname.split('/').filter(Boolean);
             if (!path.length) {
@@ -518,6 +535,27 @@ class VideoPlayerManager {
         }
 
         this.loadIframe(embedUrl);
+    }
+
+    getDailymotionPlayerId() {
+        if (!this.dailymotionPlayerIdPromise) {
+            this.dailymotionPlayerIdPromise = fetch('/api/config')
+                .then((response) => {
+                    if (!response.ok) throw new Error(`Configuration request failed (${response.status})`);
+                    return response.json();
+                })
+                .then((config) => {
+                    const playerId = config?.dailymotionPlayerId;
+                    return typeof playerId === 'string' && /^[a-zA-Z0-9_-]{1,64}$/.test(playerId)
+                        ? playerId
+                        : '';
+                })
+                .catch((error) => {
+                    this.dailymotionPlayerIdPromise = null;
+                    throw error;
+                });
+        }
+        return this.dailymotionPlayerIdPromise;
     }
 
     setupExternalIframe(videoUrl) {

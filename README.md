@@ -159,11 +159,16 @@ GOOGLE_CLIENT_ID=your-google-client-id
 GOOGLE_CLIENT_SECRET=your-google-client-secret
 GOOGLE_CALLBACK_URL=http://172.21.103.111:3000/api/auth/google/callback
 
+# Dailymotion embeds (Optional)
+DAILYMOTION_PLAYER_ID=your-dailymotion-player-id
+
 # Application Settings
 DEFAULT_ROOM=default
 MAX_USERS_PER_ROOM=50
 INVITE_EXPIRY_HOURS=24
 ```
+
+To enable Dailymotion embeds, create a Player in [Dailymotion Studio](https://www.dailymotion.com/partner/embed/players), set its allowed embed domain to your site's domain, and set `DAILYMOTION_PLAYER_ID` to that Player's ID. Restart the server after changing the environment variable.
 
 ## Docker Configuration
 

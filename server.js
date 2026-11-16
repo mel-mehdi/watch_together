@@ -93,6 +93,13 @@ const adminRoutes = require('./routes/admin')(io);
 
 app.use(express.json());
 
+app.get('/api/config', (req, res) => {
+    const playerId = (process.env.DAILYMOTION_PLAYER_ID || '').trim();
+    res.json({
+        dailymotionPlayerId: /^[a-zA-Z0-9_-]{1,64}$/.test(playerId) ? playerId : null
+    });
+});
+
 // Enable CORS for all routes
 app.use(cors({
     origin: true, // Allow all origins in development
