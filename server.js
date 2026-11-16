@@ -246,8 +246,22 @@ const roomAdmins = new Map(); // roomId -> socketId
 // Store system message configuration for each room
 const roomSystemMessageConfig = new Map(); // roomId -> config object
 
-// Voice chat users
+// Voice chat users: socketId -> { username, roomId }
 const voiceChatUsers = {};
+
+// Servers that help two browsers find a network path to each other.
+// STUN is enough on most home networks; a TURN relay (optional, from the
+// environment) is needed when both sides are behind strict networks.
+const VOICE_ICE_SERVERS = [
+    { urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302'] }
+];
+if (process.env.TURN_URL) {
+    VOICE_ICE_SERVERS.push({
+        urls: process.env.TURN_URL.split(',').map(s => s.trim()).filter(Boolean),
+        username: process.env.TURN_USERNAME || undefined,
+        credential: process.env.TURN_CREDENTIAL || undefined
+    });
+}
 
 // Default system message configuration
 function getDefaultSystemMessageConfig() {
@@ -875,53 +889,60 @@ io.on('connection', async (socket) => {
     });
     
     // Simple Voice Chat System
-    socket.on('join-voice-chat', () => {
+    // The newcomer receives the list of people already in the call and calls
+    // each of them; the others only answer. One caller per pair, no clashes.
+    socket.on('join-voice-chat', (data = {}) => {
         const user = users[socket.id];
         if (!user) return;
-        
-        voiceChatUsers[socket.id] = { 
+        const roomId = String(user.roomId);
+
+        const peers = Object.entries(voiceChatUsers)
+            .filter(([id, v]) => id !== socket.id && v.roomId === roomId)
+            .map(([id, v]) => ({ id, username: v.username, muted: v.muted }));
+
+        voiceChatUsers[socket.id] = {
             username: user.username,
-            roomId: user.roomId
+            roomId,
+            muted: Boolean(data.muted)
         };
-        
-        // Notify others in the same room that this user joined voice chat
-        socket.to(user.roomId).emit('user-joined-voice', socket.id);
-        
-        console.log(`${user.username} joined voice chat in room ${user.roomId}`);
+
+        socket.emit('voice-peers', { peers, iceServers: VOICE_ICE_SERVERS });
+        socket.to(user.roomId).emit('user-joined-voice', {
+            id: socket.id,
+            username: user.username,
+            muted: Boolean(data.muted)
+        });
+        console.log(`${user.username} joined voice chat (${peers.length + 1} in the call)`);
     });
 
     socket.on('leave-voice-chat', () => {
-        const user = users[socket.id];
-        if (voiceChatUsers[socket.id] && user) {
-            delete voiceChatUsers[socket.id];
-            
-            // Notify others in the same room that this user left voice chat
-            socket.to(user.roomId).emit('user-left-voice', socket.id);
-            
-            console.log(`${user.username} left voice chat`);
-        }
+        const voice = voiceChatUsers[socket.id];
+        if (!voice) return;
+        delete voiceChatUsers[socket.id];
+        socket.to(voice.roomId).emit('user-left-voice', socket.id);
+        console.log(`${voice.username} left voice chat`);
     });
 
-    socket.on('offer', (data) => {
-        socket.to(data.to).emit('offer', {
-            offer: data.offer,
-            from: socket.id
-        });
+    socket.on('voice-mute', (data = {}) => {
+        const voice = voiceChatUsers[socket.id];
+        if (!voice) return;
+        voice.muted = Boolean(data.muted);
+        socket.to(voice.roomId).emit('voice-mute', { id: socket.id, muted: voice.muted });
     });
 
-    socket.on('answer', (data) => {
-        socket.to(data.to).emit('answer', {
-            answer: data.answer,
-            from: socket.id
+    // Call set-up messages go only between two people in the same call
+    const relayVoice = (event, field) => {
+        socket.on(event, (data) => {
+            if (!data || typeof data.to !== 'string' || !data[field]) return;
+            const from = voiceChatUsers[socket.id];
+            const to = voiceChatUsers[data.to];
+            if (!from || !to || from.roomId !== to.roomId) return;
+            io.to(data.to).emit(event, { from: socket.id, [field]: data[field] });
         });
-    });
-
-    socket.on('ice-candidate', (data) => {
-        socket.to(data.to).emit('ice-candidate', {
-            candidate: data.candidate,
-            from: socket.id
-        });
-    });
+    };
+    relayVoice('voice-offer', 'description');
+    relayVoice('voice-answer', 'description');
+    relayVoice('voice-ice', 'candidate');
     
     // Handle detailed sync from admin
     socket.on('detailed sync', (data) => {

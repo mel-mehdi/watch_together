@@ -810,6 +810,96 @@ body {
     opacity: 0;
 }
 
+/* In the call: green button (click to leave), people counter, mute button */
+.voice-chat-btn.active {
+    background: var(--success-color);
+    overflow: visible;
+}
+
+.voice-chat-btn.active:hover {
+    background: var(--error-color);
+    border-color: var(--error-color);
+    animation: none;
+    box-shadow: var(--shadow-md), 0 0 20px rgba(239, 68, 68, 0.45);
+}
+
+.voice-chat-btn.joining {
+    cursor: wait;
+    opacity: 0.8;
+}
+
+.voice-count {
+    position: absolute;
+    top: -6px;
+    right: -6px;
+    min-width: 20px;
+    height: 20px;
+    padding: 0 5px;
+    border-radius: 10px;
+    background: var(--bg-primary, #0f0f23);
+    border: 2px solid var(--success-color);
+    color: #fff;
+    font-size: 11px;
+    font-weight: 700;
+    line-height: 16px;
+    text-align: center;
+    pointer-events: none;
+}
+
+.voice-count[hidden],
+.voice-mute-btn[hidden] {
+    display: none;
+}
+
+.voice-mute-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    height: 40px;
+    flex-shrink: 0;
+    border: 2px solid var(--border-color);
+    border-radius: 50%;
+    background: var(--bg-secondary);
+    color: var(--text-primary, #fff);
+    font-size: 16px;
+    cursor: pointer;
+    animation: wtVoicePop 0.25s ease-out;
+    transition: background 0.2s ease, border-color 0.2s ease, transform 0.15s ease;
+}
+
+.voice-mute-btn:hover {
+    border-color: var(--primary-color);
+    transform: scale(1.06);
+}
+
+.voice-mute-btn:active {
+    transform: scale(0.92);
+}
+
+.voice-mute-btn.muted {
+    background: var(--error-color);
+    border-color: var(--error-color);
+    color: #fff;
+}
+
+@keyframes wtVoicePop {
+    from { transform: scale(0.4); opacity: 0; }
+    to { transform: scale(1); opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .voice-mute-btn { animation: none; }
+}
+
+@media (max-width: 480px) {
+    .voice-mute-btn {
+        width: 36px;
+        height: 36px;
+        font-size: 14px;
+    }
+}
+
 /* Enhanced pulse animation for active voice chat */
 @keyframes voicePulse {
     0% { 

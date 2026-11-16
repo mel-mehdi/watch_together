@@ -73,6 +73,11 @@ Google keeps client secrets hidden after creation: if the secret is lost, use **
 | Variable | For |
 |---|---|
 | `EMAIL_HOST`, `EMAIL_PORT`, `EMAIL_USER`, `EMAIL_PASS`, `FROM_EMAIL` | Password-reset emails. With Gmail: `EMAIL_HOST=smtp.gmail.com` and an App Password as `EMAIL_PASS`. |
+| `TURN_URL`, `TURN_USERNAME`, `TURN_CREDENTIAL` | Voice calls between people on strict networks (some mobile data or office networks). Without them, calls connect directly, which works on most home networks. `TURN_URL` takes one address or several separated by commas, e.g. `turn:relay.example.com:3478`. |
+
+## Voice call
+
+The phone button left of the chat box joins the room's voice call; the browser asks for the microphone. The number on it is how many people are in the call; the microphone button next to it mutes. If the microphone is refused, you still hear the others. Audio goes directly between browsers; the server only introduces them. Browsers allow the microphone only on `https` or `localhost`.
 
 ## Running it on your computer
 

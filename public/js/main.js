@@ -764,177 +764,334 @@ class VideoPlayerManager {
 // 8. VOICE CHAT MANAGER
 // ========================================
 class VoiceChatManager {
+    // Group voice call inside a room. Every pair of people in the call has its
+    // own direct audio connection (WebRTC); the server only passes the set-up
+    // messages. The newcomer calls everyone already there, so each pair has
+    // exactly one caller. Muting switches the microphone track off, which
+    // needs no new set-up.
     constructor(appState, domCache, socketManager) {
         this.appState = appState;
         this.dom = domCache;
         this.socket = socketManager;
         this.isInVoiceRoom = false;
+        this.isJoining = false;
         this.isMicEnabled = false;
         this.localStream = null;
-        this.peerConnections = {};
+        this.iceServers = CONFIG.ICE_SERVERS;
+        this.peers = {};           // socketId -> { pc, username, pendingIce: [] }
         this.audioElements = {};
         this.toggleBtn = null;
+        this.muteBtn = null;
+        this.countBadge = null;
+    }
+
+    // Kept for code elsewhere that reads them
+    get peerConnections() {
+        return Object.fromEntries(Object.entries(this.peers).map(([id, p]) => [id, p.pc]));
     }
 
     initialize() {
         this.toggleBtn = this.dom.get('voice-chat-toggle');
-        this.setupEventListeners();
-    }
-
-    setupEventListeners() {
         if (!this.toggleBtn) return;
-        
+
+        this.muteBtn = document.createElement('button');
+        this.muteBtn.type = 'button';
+        this.muteBtn.className = 'voice-mute-btn';
+        this.muteBtn.hidden = true;
+        this.toggleBtn.insertAdjacentElement('afterend', this.muteBtn);
+
+        this.countBadge = document.createElement('span');
+        this.countBadge.className = 'voice-count';
+        this.countBadge.hidden = true;
+        this.toggleBtn.style.position = 'relative';
+        this.toggleBtn.appendChild(this.countBadge);
+
         this.toggleBtn.addEventListener('click', () => {
+            if (this.isJoining) return;
             this.isInVoiceRoom ? this.leaveVoiceRoom() : this.joinVoiceRoom();
         });
+        this.muteBtn.addEventListener('click', () => this.toggleMicrophone());
 
-        this.toggleBtn.addEventListener('dblclick', (e) => {
-            e.preventDefault();
-            if (this.isInVoiceRoom) this.toggleMicrophone();
+        this.updateButtonState();
+    }
+
+    bindSocketEvents() {
+        const raw = () => this.socket.socket;
+
+        this.socket.on('voice-peers', async ({ peers = [], iceServers } = {}) => {
+            if (!this.isInVoiceRoom) return;
+            if (Array.isArray(iceServers) && iceServers.length) this.iceServers = iceServers;
+            for (const peer of peers) {
+                await this.callPeer(peer.id, peer.username);
+            }
+            this.updateButtonState();
+        });
+
+        this.socket.on('user-joined-voice', ({ id, username } = {}) => {
+            if (!this.isInVoiceRoom || !id || id === raw()?.id) return;
+            // They will call us; just remember the name
+            this.peers[id] = this.peers[id] || { pc: null, username, pendingIce: [] };
+            this.peers[id].username = username;
+            NotificationSystem.show(`${username || 'Someone'} joined the voice call`, 'info');
+            this.updateButtonState();
+        });
+
+        this.socket.on('user-left-voice', (id) => {
+            const name = this.peers[id]?.username;
+            if (!this.peers[id]) return;
+            this.closePeer(id);
+            if (this.isInVoiceRoom && name) {
+                NotificationSystem.show(`${name} left the voice call`, 'info');
+            }
+            this.updateButtonState();
+        });
+
+        this.socket.on('voice-offer', async ({ from, description } = {}) => {
+            if (!this.isInVoiceRoom || !from || !description) return;
+            try {
+                const pc = this.ensurePeer(from).pc;
+                await pc.setRemoteDescription(description);
+                // The caller's offer created the audio slot: send our mic on it
+                const transceiver = pc.getTransceivers().find(t => t.receiver.track?.kind === 'audio');
+                if (transceiver) {
+                    transceiver.direction = 'sendrecv';
+                    await transceiver.sender.replaceTrack(this.currentTrack());
+                }
+                await this.flushIce(from);
+                await pc.setLocalDescription(await pc.createAnswer());
+                this.socket.emit('voice-answer', { to: from, description: pc.localDescription });
+            } catch (error) {
+                console.error('Voice call: could not answer', error);
+            }
+        });
+
+        this.socket.on('voice-answer', async ({ from, description } = {}) => {
+            const pc = this.peers[from]?.pc;
+            if (!pc || !description) return;
+            try {
+                await pc.setRemoteDescription(description);
+                await this.flushIce(from);
+            } catch (error) {
+                console.error('Voice call: bad answer', error);
+            }
+        });
+
+        this.socket.on('voice-ice', async ({ from, candidate } = {}) => {
+            const peer = this.peers[from];
+            if (!peer || !candidate) return;
+            if (!peer.pc || !peer.pc.remoteDescription) {
+                peer.pendingIce.push(candidate);   // arrived before the offer/answer
+                return;
+            }
+            try {
+                await peer.pc.addIceCandidate(candidate);
+            } catch (error) {
+                console.warn('Voice call: skipped a network candidate', error);
+            }
+        });
+
+        // A dropped connection gets a new id on the server: start over
+        raw()?.on('disconnect', () => {
+            if (this.isInVoiceRoom) {
+                this.leaveVoiceRoom({ silent: true });
+                NotificationSystem.show('Connection lost: you left the voice call', 'error');
+            }
         });
     }
 
     async joinVoiceRoom() {
-        try {
-            this.isInVoiceRoom = true;
-            this.socket.emit('join voice room', { username: this.appState.username, listenOnly: true });
-            this.updateButtonState();
-            // NotificationSystem.show('Joined voice chat - Double-click to enable microphone', 'success');
-        } catch (error) {
-            console.error('Error joining voice room:', error);
-            NotificationSystem.show('Failed to join voice chat', 'error');
-            this.isInVoiceRoom = false;
-            this.updateButtonState();
+        if (!window.RTCPeerConnection) {
+            NotificationSystem.show('This browser does not support voice calls', 'error');
+            return;
         }
-    }
+        this.isJoining = true;
+        this.updateButtonState();
 
-    async toggleMicrophone() {
-        if (!this.isInVoiceRoom) return;
-        this.isMicEnabled ? this.disableMicrophone() : await this.enableMicrophone();
-    }
-
-    async enableMicrophone() {
+        // Ask for the microphone; if refused, join to listen only
         try {
-            this.localStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-            this.isMicEnabled = true;
-            
-            // Update existing peer connections
-            Object.values(this.peerConnections).forEach(pc => {
-                this.localStream.getTracks().forEach(track => {
-                    pc.addTrack(track, this.localStream);
-                });
+            if (!navigator.mediaDevices?.getUserMedia) throw new Error('no microphone access (needs https)');
+            this.localStream = await navigator.mediaDevices.getUserMedia({
+                audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true }
             });
-
-            this.socket.emit('microphone enabled', { username: this.appState.username });
-            this.updateButtonState();
-            // NotificationSystem.show('Microphone enabled - You can now speak', 'success');
+            this.isMicEnabled = true;
         } catch (error) {
-            console.error('Error enabling microphone:', error);
-            NotificationSystem.show('Failed to access microphone', 'error');
+            console.warn('Voice call: microphone unavailable', error);
+            this.localStream = null;
+            this.isMicEnabled = false;
+            NotificationSystem.show('Microphone blocked: you can listen, but others will not hear you', 'error');
         }
+
+        this.isJoining = false;
+        this.isInVoiceRoom = true;
+        this.socket.emit('join-voice-chat', { muted: !this.isMicEnabled });
+        this.updateButtonState();
     }
 
-    disableMicrophone() {
+    leaveVoiceRoom({ silent = false } = {}) {
+        Object.keys(this.peers).forEach(id => this.closePeer(id));
         if (this.localStream) {
             this.localStream.getTracks().forEach(track => track.stop());
             this.localStream = null;
         }
-
         this.isMicEnabled = false;
-        this.socket.emit('microphone disabled', { username: this.appState.username });
+        this.isInVoiceRoom = false;
+        if (!silent && this.socket.socket?.connected) this.socket.emit('leave-voice-chat');
         this.updateButtonState();
-        // NotificationSystem.show('Microphone disabled - You can still hear others', 'info');
     }
 
-    leaveVoiceRoom() {
-        this.isInVoiceRoom = false;
-        this.disableMicrophone();
+    async toggleMicrophone() {
+        if (!this.isInVoiceRoom) return;
 
-        // Close all peer connections
-        Object.values(this.peerConnections).forEach(pc => pc.close());
-        this.peerConnections = {};
+        // Listening only so far: ask for the microphone now
+        if (!this.localStream) {
+            try {
+                this.localStream = await navigator.mediaDevices.getUserMedia({
+                    audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true }
+                });
+            } catch (error) {
+                NotificationSystem.show('Microphone blocked: allow it in the browser address bar', 'error');
+                return;
+            }
+            const track = this.currentTrack();
+            await Promise.all(Object.values(this.peers).map(p => {
+                const sender = p.pc?.getTransceivers().find(t => t.receiver.track?.kind === 'audio')?.sender;
+                return sender ? sender.replaceTrack(track) : null;
+            }));
+            this.isMicEnabled = true;
+        } else {
+            this.isMicEnabled = !this.isMicEnabled;
+            this.localStream.getAudioTracks().forEach(t => { t.enabled = this.isMicEnabled; });
+        }
 
-        // Remove all audio elements
-        Object.values(this.audioElements).forEach(audio => audio.remove());
-        this.audioElements = {};
-
-        this.socket.emit('leave voice room');
+        this.socket.emit('voice-mute', { muted: !this.isMicEnabled });
         this.updateButtonState();
-        // NotificationSystem.show('Left voice chat', 'info');
+    }
+
+    currentTrack() {
+        return this.localStream?.getAudioTracks()[0] || null;
+    }
+
+    ensurePeer(id, username) {
+        const existing = this.peers[id];
+        if (existing?.pc) return existing;
+
+        const peer = existing || { pc: null, username, pendingIce: [] };
+        if (username) peer.username = username;
+        const pc = new RTCPeerConnection({ iceServers: this.iceServers });
+        peer.pc = pc;
+
+        pc.onicecandidate = (event) => {
+            if (event.candidate) {
+                this.socket.emit('voice-ice', { to: id, candidate: event.candidate });
+            }
+        };
+        pc.ontrack = (event) => {
+            this.playRemoteAudio(id, event.streams[0] || new MediaStream([event.track]));
+        };
+        pc.onconnectionstatechange = () => {
+            if (pc.connectionState === 'failed') {
+                console.warn(`Voice call: could not connect to ${peer.username || id}`);
+                NotificationSystem.show(`Could not connect the voice call with ${peer.username || 'a user'} (network blocked)`, 'error');
+            }
+        };
+
+        this.peers[id] = peer;
+        return peer;
+    }
+
+    async callPeer(id, username) {
+        try {
+            const { pc } = this.ensurePeer(id, username);
+            // Always open a two-way audio slot, even without a microphone,
+            // so the other side can still be heard
+            const transceiver = pc.addTransceiver('audio', { direction: 'sendrecv' });
+            await transceiver.sender.replaceTrack(this.currentTrack());
+            await pc.setLocalDescription(await pc.createOffer());
+            this.socket.emit('voice-offer', { to: id, description: pc.localDescription });
+        } catch (error) {
+            console.error('Voice call: could not call', error);
+        }
+    }
+
+    async flushIce(id) {
+        const peer = this.peers[id];
+        if (!peer?.pc) return;
+        const queued = peer.pendingIce.splice(0);
+        for (const candidate of queued) {
+            try { await peer.pc.addIceCandidate(candidate); } catch (e) { /* stale candidate */ }
+        }
+    }
+
+    playRemoteAudio(id, stream) {
+        let audio = this.audioElements[id];
+        if (!audio) {
+            audio = document.createElement('audio');
+            audio.autoplay = true;
+            audio.playsInline = true;
+            audio.style.display = 'none';
+            document.body.appendChild(audio);
+            this.audioElements[id] = audio;
+        }
+        audio.srcObject = stream;
+        audio.play().catch(() => {
+            // The browser wants a click first (autoplay rule)
+            NotificationSystem.show('Click anywhere to hear the voice call', 'info');
+            document.addEventListener('click', () => audio.play().catch(() => {}), { once: true });
+        });
+    }
+
+    closePeer(id) {
+        const peer = this.peers[id];
+        if (peer?.pc) {
+            peer.pc.ontrack = peer.pc.onicecandidate = peer.pc.onconnectionstatechange = null;
+            peer.pc.close();
+        }
+        delete this.peers[id];
+        if (this.audioElements[id]) {
+            this.audioElements[id].srcObject = null;
+            this.audioElements[id].remove();
+            delete this.audioElements[id];
+        }
     }
 
     updateButtonState() {
         if (!this.toggleBtn) return;
+        const others = Object.keys(this.peers).length;
+        const icon = (name) => `<i class="fas ${name}" aria-hidden="true"></i>`;
 
-        this.toggleBtn.classList.add('state-changing');
-        
-        setTimeout(() => {
-            if (this.isInVoiceRoom) {
-                this.toggleBtn.classList.add('active');
-                if (this.isMicEnabled) {
-                    this.toggleBtn.innerHTML = '<i class="fas fa-microphone"></i>';
-                    this.toggleBtn.title = 'Speaking (Click: leave, Double-click: mute)';
-                    this.toggleBtn.style.background = 'var(--success-color)';
-                } else {
-                    this.toggleBtn.innerHTML = '<i class="fas fa-headphones"></i>';
-                    this.toggleBtn.title = 'Listening (Click: leave, Double-click: speak)';
-                    this.toggleBtn.style.background = 'var(--accent-color)';
-                }
-            } else {
-                this.toggleBtn.classList.remove('active');
-                this.toggleBtn.innerHTML = '<i class="fas fa-microphone"></i>';
-                this.toggleBtn.title = 'Join voice chat';
-                this.toggleBtn.style.background = '';
-            }
-            setTimeout(() => this.toggleBtn.classList.remove('state-changing'), 150);
-        }, 150);
-    }
+        this.toggleBtn.classList.toggle('active', this.isInVoiceRoom);
+        this.toggleBtn.classList.toggle('joining', this.isJoining);
+        this.toggleBtn.style.background = '';
 
-    async createPeerConnection(userId) {
-        try {
-            const pc = new RTCPeerConnection({ iceServers: CONFIG.ICE_SERVERS });
-
-            if (this.localStream) {
-                this.localStream.getTracks().forEach(track => {
-                    pc.addTrack(track, this.localStream);
-                });
-            }
-
-            pc.ontrack = (event) => {
-                this.handleIncomingAudio(userId, event.streams[0]);
-            };
-
-            pc.onicecandidate = (event) => {
-                if (event.candidate) {
-                    this.socket.emit('ice candidate', {
-                        candidate: event.candidate,
-                        to: userId
-                    });
-                }
-            };
-
-            this.peerConnections[userId] = pc;
-            return pc;
-        } catch (error) {
-            console.error('Error creating peer connection:', error);
-            return null;
+        let label;
+        if (this.isJoining) {
+            this.toggleBtn.innerHTML = icon('fa-spinner fa-spin');
+            label = 'Joining the voice call…';
+        } else if (this.isInVoiceRoom) {
+            this.toggleBtn.innerHTML = icon('fa-phone-slash');
+            label = others
+                ? `In the voice call with ${others} other${others > 1 ? 's' : ''}. Click to leave`
+                : 'In the voice call, waiting for others. Click to leave';
+        } else {
+            this.toggleBtn.innerHTML = icon('fa-phone');
+            label = 'Join the voice call';
         }
-    }
+        this.toggleBtn.title = label;
+        this.toggleBtn.setAttribute('aria-label', label);
+        this.toggleBtn.setAttribute('aria-pressed', String(this.isInVoiceRoom));
 
-    handleIncomingAudio(userId, stream) {
-        if (this.audioElements[userId]) {
-            this.audioElements[userId].remove();
+        this.countBadge.textContent = String(others + 1);
+        this.countBadge.hidden = !this.isInVoiceRoom;
+        this.toggleBtn.appendChild(this.countBadge);
+
+        if (this.muteBtn) {
+            this.muteBtn.hidden = !this.isInVoiceRoom;
+            this.muteBtn.classList.toggle('muted', !this.isMicEnabled);
+            this.muteBtn.innerHTML = icon(this.isMicEnabled ? 'fa-microphone' : 'fa-microphone-slash');
+            const muteLabel = this.isMicEnabled ? 'Mute your microphone' : 'Turn your microphone on';
+            this.muteBtn.title = muteLabel;
+            this.muteBtn.setAttribute('aria-label', muteLabel);
         }
-
-        const audio = document.createElement('audio');
-        audio.id = `audio-${userId}`;
-        audio.srcObject = stream;
-        audio.autoplay = true;
-        audio.volume = 0.8;
-        audio.style.display = 'none';
-
-        document.body.appendChild(audio);
-        this.audioElements[userId] = audio;
     }
 
     cleanup() {
@@ -1194,72 +1351,7 @@ class WatchTogetherApp {
     }
 
     setupVoiceChatEvents() {
-        this.socketManager.on('user joined voice', async (userData) => {
-            console.log('User joined voice:', userData);
-            if (userData.userId !== this.socket.id && this.voiceChat.isMicEnabled) {
-                const pc = await this.voiceChat.createPeerConnection(userData.userId);
-                if (pc) {
-                    const offer = await pc.createOffer();
-                    await pc.setLocalDescription(offer);
-                    this.socketManager.emit('voice offer', {
-                        offer: pc.localDescription,
-                        to: userData.userId
-                    });
-                }
-            }
-        });
-
-        this.socketManager.on('user left voice', (userId) => {
-            if (this.voiceChat.audioElements[userId]) {
-                this.voiceChat.audioElements[userId].remove();
-                delete this.voiceChat.audioElements[userId];
-            }
-            if (this.voiceChat.peerConnections[userId]) {
-                this.voiceChat.peerConnections[userId].close();
-                delete this.voiceChat.peerConnections[userId];
-            }
-        });
-
-        this.socketManager.on('voice offer', async (data) => {
-            try {
-                const pc = this.voiceChat.peerConnections[data.from] || 
-                          await this.voiceChat.createPeerConnection(data.from);
-                if (!pc) return;
-
-                await pc.setRemoteDescription(new RTCSessionDescription(data.offer));
-                const answer = await pc.createAnswer();
-                await pc.setLocalDescription(answer);
-
-                this.socketManager.emit('voice answer', {
-                    answer: pc.localDescription,
-                    to: data.from
-                });
-            } catch (error) {
-                console.error('Error handling voice offer:', error);
-            }
-        });
-
-        this.socketManager.on('voice answer', async (data) => {
-            try {
-                const pc = this.voiceChat.peerConnections[data.from];
-                if (pc) {
-                    await pc.setRemoteDescription(new RTCSessionDescription(data.answer));
-                }
-            } catch (error) {
-                console.error('Error handling voice answer:', error);
-            }
-        });
-
-        this.socketManager.on('ice candidate', async (data) => {
-            try {
-                const pc = this.voiceChat.peerConnections[data.from];
-                if (pc) {
-                    await pc.addIceCandidate(new RTCIceCandidate(data.candidate));
-                }
-            } catch (error) {
-                console.error('Error adding ICE candidate:', error);
-            }
-        });
+        this.voiceChat.bindSocketEvents();
     }
 
     async initializeAuth() {
@@ -2652,6 +2744,7 @@ let app;
 document.addEventListener('DOMContentLoaded', async () => {
     try {
         app = new WatchTogetherApp();
+        window.app = app;
         await app.initialize();
         
         // Auto-join room if on room page
@@ -2678,8 +2771,6 @@ window.addEventListener('unhandledrejection', (event) => {
     NotificationSystem.show('An unexpected error occurred', 'error');
 });
 
-// Export for global access
-window.app = app;
 
 // ========================================
 // GLOBAL SHARE FUNCTIONS
