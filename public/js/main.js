@@ -245,6 +245,12 @@ class SocketManager {
         this.reconnectDelay = 1000;
         this.eventHandlers = new Map();
         this.eventQueue = []; // Initialize event queue
+        // The room this page is in. A reconnect gives the connection a new
+        // id the server does not know, so the page joins the room again and
+        // holds everything else until the server says 'room joined'.
+        this.roomJoin = null;
+        this.inRoom = false;
+        this.hasConnected = false;
     }
 
     initialize() {
@@ -262,11 +268,24 @@ class SocketManager {
         this.socket.on('connect', () => {
             console.log('Socket connected');
             this.reconnectAttempts = 0;
-            this.processEventQueue(); // Process any queued events
+            if (this.roomJoin) {
+                // Reconnected: back into the room first, then the queue
+                this.inRoom = false;
+                this.socket.emit('join room', this.roomJoin);
+            } else {
+                this.processEventQueue();
+            }
+            this.hasConnected = true;
+        });
+
+        this.socket.on('room joined', () => {
+            this.inRoom = true;
+            this.processEventQueue();
         });
 
         this.socket.on('disconnect', (reason) => {
             console.log('Socket disconnected:', reason);
+            this.inRoom = false;
             if (reason === 'io server disconnect') {
                 this.socket.connect();
             }
@@ -296,10 +315,17 @@ class SocketManager {
     }
 
     emit(event, data) {
-        if (this.socket && this.socket.connected) {
+        if (event === 'join room') {
+            this.roomJoin = data;
+            this.inRoom = false;
+            if (this.socket?.connected) this.socket.emit(event, data);
+            return;
+        }
+        const ready = this.socket?.connected && (this.inRoom || !this.roomJoin);
+        if (ready) {
             this.socket.emit(event, data);
         } else {
-            console.warn('Socket not connected, queuing event:', event);
+            console.warn('Not in the room yet, queuing event:', event);
             // Queue the event for when socket connects
             this.queueEvent(event, data);
         }
@@ -890,12 +916,26 @@ class VoiceChatManager {
             }
         });
 
-        // A dropped connection gets a new id on the server: start over
+        // A dropped connection (phone screen locked, app switched, network
+        // change) gets a new id on the server. Keep the microphone, drop the
+        // old audio links, and rejoin the call once the room is back.
         raw()?.on('disconnect', () => {
-            if (this.isInVoiceRoom) {
-                this.leaveVoiceRoom({ silent: true });
-                NotificationSystem.show('Connection lost: you left the voice call', 'error');
+            if (!this.isInVoiceRoom) return;
+            Object.keys(this.peers).forEach(id => this.closePeer(id));
+            this.needsRejoin = true;
+            this.updateButtonState();
+        });
+
+        this.socket.on('room joined', () => {
+            if (this.isInVoiceRoom && this.needsRejoin) {
+                this.needsRejoin = false;
+                raw()?.emit('join-voice-chat', { muted: !this.isMicEnabled });
             }
+        });
+
+        // The server did not know this connection yet: retry after the rejoin
+        this.socket.on('voice-error', (reason) => {
+            if (reason === 'not-in-room' && this.isInVoiceRoom) this.needsRejoin = true;
         });
     }
 
@@ -935,6 +975,7 @@ class VoiceChatManager {
         }
         this.isMicEnabled = false;
         this.isInVoiceRoom = false;
+        this.needsRejoin = false;
         if (!silent && this.socket.socket?.connected) this.socket.emit('leave-voice-chat');
         this.updateButtonState();
     }

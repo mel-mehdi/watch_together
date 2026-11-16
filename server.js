@@ -469,6 +469,10 @@ io.on('connection', async (socket) => {
                 isAdmin: false
             };
 
+            // From here on this connection can chat and call; the page waits
+            // for this before sending anything it held during a reconnect
+            socket.emit('room joined', { roomCode: room.roomCode });
+
             // Check if this room needs an admin (first user becomes admin)
             const roomUsers = Object.values(users).filter(u => u.roomId === actualRoomId);
             if (roomUsers.length === 1 || !roomAdmins.has(actualRoomId)) {
@@ -893,7 +897,10 @@ io.on('connection', async (socket) => {
     // each of them; the others only answer. One caller per pair, no clashes.
     socket.on('join-voice-chat', (data = {}) => {
         const user = users[socket.id];
-        if (!user) return;
+        if (!user) {
+            socket.emit('voice-error', 'not-in-room');
+            return;
+        }
         const roomId = String(user.roomId);
 
         const peers = Object.entries(voiceChatUsers)
