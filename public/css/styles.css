@@ -3814,3 +3814,30 @@ body {
         padding: 7px 11px 6px;
     }
 }
+
+/* Chat bar: the message box gives up space so the call buttons and the send
+   button always fit (a text input will not shrink below ~20 characters on
+   its own) */
+.message-input-container {
+    min-width: 0;
+}
+
+#input {
+    min-width: 0;
+    width: 0;
+}
+
+.message-input-container > button {
+    flex-shrink: 0;
+}
+
+/* The pulsing ring of the call button stays inside the bar */
+.message-input-container {
+    overflow: visible;
+}
+
+@media (max-width: 480px) {
+    .message-input-container {
+        gap: 6px;
+    }
+}
