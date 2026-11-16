@@ -19,7 +19,9 @@ const VIDEO_TYPES = {
     DIRECT: 'direct',
     FACEBOOK: 'facebook',
     TWITCH: 'twitch',
-    DAILYMOTION: 'dailymotion'
+    DAILYMOTION: 'dailymotion',
+    NETFLIX: 'netflix',
+    IFRAME: 'iframe'
 };
 
 // Must match ALLOWED_REACTIONS on the server
@@ -148,36 +150,36 @@ class Utils {
 
     static detectVideoType(url) {
         if (!url) return null;
-        url = url.trim();
+        try {
+            const parsedUrl = new URL(url.trim());
+            if (!['http:', 'https:'].includes(parsedUrl.protocol)) return null;
+            const host = parsedUrl.hostname.toLowerCase().replace(/^www\./, '');
+            const isHost = (domain) => host === domain || host.endsWith(`.${domain}`);
 
-        if (url.includes('youtube.com/watch') || url.includes('youtu.be/')) {
-            return VIDEO_TYPES.YOUTUBE;
+            if (isHost('youtube.com') || isHost('youtu.be')) return VIDEO_TYPES.YOUTUBE;
+            if (isHost('vimeo.com')) return VIDEO_TYPES.VIMEO;
+            if (isHost('dailymotion.com') || isHost('dai.ly')) return VIDEO_TYPES.DAILYMOTION;
+            if (isHost('netflix.com')) return VIDEO_TYPES.NETFLIX;
+            if (isHost('twitch.tv')) return VIDEO_TYPES.TWITCH;
+            if (isHost('facebook.com') && /\/(videos|watch|reel)\b/i.test(parsedUrl.pathname)) return VIDEO_TYPES.FACEBOOK;
+            if (/\.(mp4|webm|ogg|ogv|mov|avi|mkv|flv|wmv|m4v)$/i.test(parsedUrl.pathname)) return VIDEO_TYPES.DIRECT;
+            return VIDEO_TYPES.IFRAME;
+        } catch (error) {
+            return null;
         }
-        if (url.includes('vimeo.com/')) {
-            return VIDEO_TYPES.VIMEO;
-        }
-        if (url.match(/\.(mp4|webm|ogg|mov)($|\?)/i)) {
-            return VIDEO_TYPES.DIRECT;
-        }
-        if (url.includes('facebook.com/') && url.includes('/videos/')) {
-            return VIDEO_TYPES.FACEBOOK;
-        }
-        if (url.includes('twitch.tv/')) {
-            return VIDEO_TYPES.TWITCH;
-        }
-        if (url.includes('dailymotion.com/') || url.includes('dai.ly/')) {
-            return VIDEO_TYPES.DAILYMOTION;
-        }
-        if (url.match(/\.(mp4|webm|ogg|ogv|mov|avi|mkv|flv|wmv|m4v)($|\?)/i)) {
-            return VIDEO_TYPES.DIRECT;
-        }
-        return VIDEO_TYPES.DIRECT;
     }
 
     static extractYouTubeId(url) {
-        const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|&v=)([^#&?]*).*/;
-        const match = url.match(regExp);
-        return (match && match[2].length === 11) ? match[2] : null;
+        try {
+            const parsedUrl = new URL(url);
+            const host = parsedUrl.hostname.toLowerCase().replace(/^www\./, '');
+            const videoId = host === 'youtu.be'
+                ? parsedUrl.pathname.split('/').filter(Boolean)[0]
+                : parsedUrl.searchParams.get('v') || parsedUrl.pathname.match(/\/(?:embed|shorts|live|v)\/([^/?]+)/i)?.[1];
+            return videoId && /^[a-zA-Z0-9_-]{11}$/.test(videoId) ? videoId : null;
+        } catch (error) {
+            return null;
+        }
     }
 
     static getVideoMimeType(url) {
@@ -384,9 +386,7 @@ class VideoPlayerManager {
             return;
         }
 
-        if (this.player) {
-            this.cleanup();
-        }
+        this.cleanup();
 
         this.updateVideoContainerState(!!videoUrl);
 
@@ -418,9 +418,25 @@ class VideoPlayerManager {
             case VIDEO_TYPES.DIRECT:
                 this.setupDirectVideoPlayer(videoUrl);
                 break;
+            case VIDEO_TYPES.VIMEO:
+            case VIDEO_TYPES.DAILYMOTION:
+            case VIDEO_TYPES.FACEBOOK:
+            case VIDEO_TYPES.TWITCH:
+                this.setupProviderEmbed(videoUrl, this.appState.currentVideoType);
+                break;
+            case VIDEO_TYPES.NETFLIX:
+                this.showExternalVideoMessage(
+                    'Netflix blocks playback inside other websites. Open Netflix directly; everyone will need their own Netflix access, and playback controls cannot sync through this room.',
+                    videoUrl,
+                    'Open Netflix'
+                );
+                break;
+            case VIDEO_TYPES.IFRAME:
+                this.setupExternalIframe(videoUrl);
+                break;
             default:
                 this.showUnsupportedVideoMessage(
-                    `${this.appState.currentVideoType} videos are not supported. Please use direct video links (MP4, WebM, etc.) or YouTube links.`
+                    'This link is not a valid web address. Use an HTTP or HTTPS video link.'
                 );
         }
     }
@@ -449,6 +465,84 @@ class VideoPlayerManager {
         videoPlayer.allow = "accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share";
 
         this.setupYouTubeEventHandlers(videoPlayer, videoUrl);
+    }
+
+    setupProviderEmbed(videoUrl, type) {
+        let parsedUrl;
+        try {
+            parsedUrl = new URL(videoUrl);
+        } catch (error) {
+            this.showUnsupportedVideoMessage('This video link is not valid.');
+            return;
+        }
+
+        let embedUrl;
+        if (type === VIDEO_TYPES.VIMEO) {
+            const videoId = parsedUrl.pathname.match(/\/(\d+)(?:\/|$)/)?.[1];
+            if (!videoId) {
+                this.showUnsupportedVideoMessage('Could not find a Vimeo video ID in that link.');
+                return;
+            }
+            const params = new URLSearchParams({ title: '0', byline: '0', portrait: '0' });
+            const privacyHash = parsedUrl.searchParams.get('h');
+            if (privacyHash) params.set('h', privacyHash);
+            embedUrl = `https://player.vimeo.com/video/${videoId}?${params}`;
+        } else if (type === VIDEO_TYPES.DAILYMOTION) {
+            const videoId = parsedUrl.hostname.toLowerCase().endsWith('dai.ly')
+                ? parsedUrl.pathname.split('/').filter(Boolean)[0]
+                : parsedUrl.pathname.match(/\/(?:embed\/)?video\/([a-z0-9]+)/i)?.[1];
+            if (!videoId) {
+                this.showUnsupportedVideoMessage('Could not find a Dailymotion video ID in that link.');
+                return;
+            }
+            embedUrl = `https://www.dailymotion.com/embed/video/${encodeURIComponent(videoId)}`;
+        } else if (type === VIDEO_TYPES.TWITCH) {
+            const path = parsedUrl.pathname.split('/').filter(Boolean);
+            if (!path.length) {
+                this.showUnsupportedVideoMessage('Paste a Twitch channel or video link.');
+                return;
+            }
+            const params = new URLSearchParams({ parent: window.location.hostname, autoplay: 'false' });
+            if (path[0].toLowerCase() === 'videos' && path[1]) {
+                params.set('video', path[1]);
+            } else {
+                params.set('channel', path[0]);
+            }
+            embedUrl = `https://player.twitch.tv/?${params}`;
+        } else {
+            const params = new URLSearchParams({
+                href: videoUrl,
+                show_text: 'false'
+            });
+            embedUrl = `https://www.facebook.com/plugins/video.php?${params}`;
+        }
+
+        this.loadIframe(embedUrl);
+    }
+
+    setupExternalIframe(videoUrl) {
+        if (new URL(videoUrl).origin === window.location.origin) {
+            this.showExternalVideoMessage(
+                'This page is hosted on Watch Together and cannot be embedded here.',
+                videoUrl,
+                'Open link'
+            );
+            return;
+        }
+        this.loadIframe(videoUrl);
+    }
+
+    loadIframe(src) {
+        const videoPlayer = this.dom.get('video-player');
+        const directVideoPlayer = this.dom.get('direct-video-player');
+        this.clearVideoErrorMessages();
+        videoPlayer.style.display = 'block';
+        directVideoPlayer.style.display = 'none';
+        videoPlayer.title = 'Embedded video player';
+        videoPlayer.referrerPolicy = 'strict-origin-when-cross-origin';
+        videoPlayer.allow = 'autoplay; encrypted-media; picture-in-picture; fullscreen';
+        videoPlayer.src = src;
+        videoPlayer.onload = () => this.clearVideoErrorMessages();
     }
 
     setupYouTubeEventHandlers(videoPlayer, videoUrl) {
@@ -657,30 +751,30 @@ class VideoPlayerManager {
             if (!this.appState.ignoreEvents) this.socket.emit(event, data);
         };
 
-        directVideoPlayer.addEventListener('play', Utils.throttle(() => {
+        directVideoPlayer.onplay = Utils.throttle(() => {
             this.player.playerState = PLAYER_STATES.PLAYING;
             emitPlayback('video play', directVideoPlayer.currentTime);
             if (this.appState.isAdmin) emitPlayback('admin action', 'play');
-        }, 100));
+        }, 100);
 
-        directVideoPlayer.addEventListener('pause', Utils.throttle(() => {
+        directVideoPlayer.onpause = Utils.throttle(() => {
             this.player.playerState = PLAYER_STATES.PAUSED;
             emitPlayback('video pause', directVideoPlayer.currentTime);
             if (this.appState.isAdmin) emitPlayback('admin action', 'pause');
-        }, 100));
+        }, 100);
 
-        directVideoPlayer.addEventListener('seeked', Utils.throttle(() => {
+        directVideoPlayer.onseeked = Utils.throttle(() => {
             this.player.lastKnownTime = directVideoPlayer.currentTime;
             emitPlayback('video seek', directVideoPlayer.currentTime);
-        }, 100));
+        }, 100);
 
-        directVideoPlayer.addEventListener('loadedmetadata', () => {
+        directVideoPlayer.onloadedmetadata = () => {
             console.log("Video loaded, duration:", directVideoPlayer.duration);
             this.clearVideoErrorMessages();
             if (this.appState.isAdmin) setTimeout(() => this.startAdminSync(), 1000);
-        });
+        };
 
-        directVideoPlayer.addEventListener('error', (e) => this.handleVideoError(e.target.error));
+        directVideoPlayer.onerror = (e) => this.handleVideoError(e.target.error);
     }
 
     handleVideoError(error) {
@@ -714,6 +808,18 @@ class VideoPlayerManager {
         this.createMessageContainer('video-error-container', message, '#667eea', 'fa-video');
     }
 
+    showExternalVideoMessage(message, url, linkText) {
+        this.clearVideoErrorMessages();
+        const container = this.createMessageContainer('video-error-container', message, '#667eea', 'fa-video');
+        const link = document.createElement('a');
+        link.href = url;
+        link.target = '_blank';
+        link.rel = 'noopener noreferrer';
+        link.textContent = linkText;
+        link.style.cssText = 'color: white; text-decoration: underline; font-weight: 700;';
+        container.appendChild(link);
+    }
+
     createMessageContainer(className, message, color, icon) {
         const videoPlayer = this.dom.get('video-player');
         const directVideoPlayer = this.dom.get('direct-video-player');
@@ -741,6 +847,7 @@ class VideoPlayerManager {
 
         const videoContainer = directVideoPlayer.parentNode;
         videoContainer.insertBefore(container, directVideoPlayer);
+        return container;
     }
 
     clearVideoErrorMessages() {
@@ -779,10 +886,24 @@ class VideoPlayerManager {
     cleanup() {
         this.stopAdminSync();
         this.stopListeningToYouTube();
+        const directVideo = this.dom.get('direct-video-player');
+        if (directVideo) {
+            directVideo.onplay = null;
+            directVideo.onpause = null;
+            directVideo.onseeked = null;
+            directVideo.onloadedmetadata = null;
+            directVideo.onerror = null;
+        }
+        directVideo?.pause();
         this.player = null;
         this.vimeoPlayer = null;
         this.clearVideoErrorMessages();
         this.updateVideoContainerState(false);
+        const iframe = this.dom.get('video-player');
+        if (iframe) {
+            iframe.onload = null;
+            iframe.src = 'about:blank';
+        }
     }
 }
 

@@ -368,6 +368,11 @@ function detectVideoType(url) {
     if (url.includes('dailymotion.com/') || url.includes('dai.ly/')) {
         return 'dailymotion';
     }
+
+    // Netflix links can be recognized by clients even though playback cannot be embedded
+    if (url.includes('netflix.com/')) {
+        return 'netflix';
+    }
     
     // For other URLs, try to use iframe embedding as a fallback
     return 'iframe';
