@@ -1585,9 +1585,9 @@ class WatchTogetherApp {
         try {
             const timestamp = msg.timestamp || Date.now();
             const date = new Date(timestamp);
-            timeString = isNaN(date.getTime()) ? new Date().toLocaleTimeString() : date.toLocaleTimeString();
+            timeString = isNaN(date.getTime()) ? new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
         } catch {
-            timeString = new Date().toLocaleTimeString();
+            timeString = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
         }
 
         const isSentByCurrentUser = msg.username === this.appState.username;
@@ -1616,7 +1616,7 @@ class WatchTogetherApp {
         const reactable = Boolean(id);
         return `
             <div class="message-bubble" ${reactable ? `data-message-id="${esc(id)}"` : ''}>
-                <span class="message-text">${esc(text)}</span>
+                <span class="message-text">${this.linkify(esc(text))}</span>
                 <span class="message-time">${esc(timeString)}</span>
                 ${reactable ? `
                 <button type="button" class="react-btn" title="Add reaction" aria-label="Add reaction" aria-haspopup="menu" aria-expanded="false">
@@ -1625,6 +1625,17 @@ class WatchTogetherApp {
             </div>
             ${reactable ? `<div class="message-reactions" data-for="${esc(id)}">${this.renderReactionChips(reactions)}</div>` : ''}
         `;
+    }
+
+    // Turns http(s) addresses in already-escaped text into links that open in
+    // a new tab. Works on escaped text, so nothing typed can become HTML.
+    linkify(escapedText) {
+        return escapedText.replace(/\bhttps?:\/\/[^\s<]+/gi, (match) => {
+            // Leave sentence punctuation after the address out of the link
+            const url = match.replace(/(?:[.,!?;:)\]]|&#0?39;|&quot;)+$/, '');
+            const rest = match.slice(url.length);
+            return `<a href="${url}" target="_blank" rel="noopener noreferrer nofollow">${url}</a>${rest}`;
+        });
     }
 
     // Badges like "👍 2": one per emoji, highlighted when you are one of them
@@ -1778,13 +1789,13 @@ class WatchTogetherApp {
                 timestamp = msg.timestamp || msg.createdAt || Date.now();
                 const date = new Date(timestamp);
                 if (isNaN(date.getTime())) {
-                    timeString = new Date().toLocaleTimeString();
+                    timeString = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
                     timestamp = Date.now();
                 } else {
-                    timeString = date.toLocaleTimeString();
+                    timeString = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
                 }
             } catch (error) {
-                timeString = new Date().toLocaleTimeString();
+                timeString = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
                 timestamp = Date.now();
             }
 
@@ -1845,7 +1856,7 @@ class WatchTogetherApp {
         messageElement.innerHTML = `
             <div class="message-content system">
                 <span class="message-text">${msg}</span>
-                <span class="message-time">${new Date().toLocaleTimeString()}</span>
+                <span class="message-time">${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
             </div>
         `;
 
