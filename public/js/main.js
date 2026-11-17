@@ -443,7 +443,9 @@ class VideoPlayerManager {
                 this.setupProviderEmbed(videoUrl, this.appState.currentVideoType).catch((error) => {
                     console.error('Failed to configure Dailymotion player:', error);
                     if (this.currentVideoUrl === videoUrl) {
-                        this.showUnsupportedVideoMessage('Could not load the Dailymotion player. Check the Player ID and allowed domain settings.');
+                        const detail = typeof error?.message === 'string' ? error.message.slice(0, 180) : '';
+                        const reason = detail ? ` Details: ${detail}` : '';
+                        this.showUnsupportedVideoMessage(`Could not load the Dailymotion player. Check the Player ID and allowed domain settings.${reason}`);
                     }
                 });
                 break;
@@ -625,16 +627,27 @@ class VideoPlayerManager {
         const dailymotion = await this.loadDailymotionLibrary(playerId);
         if (this.currentVideoUrl !== videoUrl) return;
 
-        const player = await dailymotion.createPlayer('dailymotion-player', {
+        const playerCreation = dailymotion.createPlayer('dailymotion-player', {
             video: videoId,
             params: { autoplay: false },
             referrerPolicy: 'strict-origin-when-cross-origin'
         });
+        let creationTimeout;
+        const player = await Promise.race([
+            playerCreation,
+            new Promise((resolve, reject) => {
+                creationTimeout = setTimeout(
+                    () => reject(new Error('Dailymotion player initialization timed out')),
+                    20000
+                );
+            })
+        ]).finally(() => clearTimeout(creationTimeout));
         if (this.currentVideoUrl !== videoUrl) {
             dailymotion.destroy?.('dailymotion-player');
             return;
         }
 
+        this.clearVideoErrorMessages();
         this.dailymotionPlayer = player;
         this.player = {
             getCurrentTime: () => player.getState().then((state) => Number(state.videoTime) || 0),
@@ -1140,10 +1153,9 @@ class VideoPlayerManager {
             <div style="background: rgba(255,255,255,0.1); color: white; padding: 12px 20px; margin-bottom: 20px; border-radius: 8px; display: inline-block;">
                 <i class="fas ${icon}" style="margin-right: 8px; font-size: 18px;"></i>Video Player
             </div>
-            <p style="margin-bottom: 20px; font-size: 16px; line-height: 1.5; max-width: 400px;">
-                ${message}
-            </p>
+            <p style="margin-bottom: 20px; font-size: 16px; line-height: 1.5; max-width: 400px;"></p>
         `;
+        container.querySelector('p').textContent = message;
 
         const videoContainer = directVideoPlayer.parentNode;
         videoContainer.insertBefore(container, directVideoPlayer);
