@@ -383,6 +383,9 @@ class VideoPlayerManager {
         this.dailymotionPlayerIdPromise = null;
         this.dailymotionPlayer = null;
         this.dailymotionLibraryPromise = null;
+        this.dailymotionSetupPromise = null;
+        this.dailymotionDestroyPromise = Promise.resolve();
+        this.dailymotionGeneration = 0;
         this.dailymotionEventHandlers = [];
         this.isDailymotionSeeking = false;
         this.lastDailymotionVolume = 1;
@@ -396,8 +399,12 @@ class VideoPlayerManager {
             console.warn('Refused to load a non-http(s) video URL');
             return;
         }
+        if (videoUrl && videoUrl === this.currentVideoUrl && (this.dailymotionPlayer || this.dailymotionSetupPromise)) {
+            return;
+        }
 
         this.cleanup();
+        const dailymotionGeneration = this.dailymotionGeneration;
 
         this.updateVideoContainerState(!!videoUrl);
 
@@ -440,13 +447,23 @@ class VideoPlayerManager {
                 });
                 break;
             case VIDEO_TYPES.DAILYMOTION:
-                this.setupProviderEmbed(videoUrl, this.appState.currentVideoType).catch((error) => {
+                const previousSetup = this.dailymotionSetupPromise;
+                const setupPromise = (async () => {
+                    if (previousSetup) await previousSetup.catch(() => {});
+                    if (dailymotionGeneration !== this.dailymotionGeneration) return;
+                    await this.dailymotionDestroyPromise;
+                    await this.setupProviderEmbed(videoUrl, this.appState.currentVideoType, dailymotionGeneration);
+                })();
+                this.dailymotionSetupPromise = setupPromise;
+                setupPromise.catch((error) => {
                     console.error('Failed to configure Dailymotion player:', error);
                     if (this.currentVideoUrl === videoUrl) {
                         const detail = typeof error?.message === 'string' ? error.message.slice(0, 180) : '';
                         const reason = detail ? ` Details: ${detail}` : '';
                         this.showUnsupportedVideoMessage(`Could not load the Dailymotion player. Check the Player ID and allowed domain settings.${reason}`);
                     }
+                }).finally(() => {
+                    if (this.dailymotionSetupPromise === setupPromise) this.dailymotionSetupPromise = null;
                 });
                 break;
             case VIDEO_TYPES.NETFLIX:
@@ -492,7 +509,7 @@ class VideoPlayerManager {
         this.setupYouTubeEventHandlers(videoPlayer, videoUrl);
     }
 
-    async setupProviderEmbed(videoUrl, type) {
+    async setupProviderEmbed(videoUrl, type, dailymotionGeneration = this.dailymotionGeneration) {
         let parsedUrl;
         try {
             parsedUrl = new URL(videoUrl);
@@ -521,7 +538,7 @@ class VideoPlayerManager {
                 return;
             }
             const playerId = await this.getDailymotionPlayerId();
-            if (this.currentVideoUrl !== videoUrl) return;
+            if (this.currentVideoUrl !== videoUrl || dailymotionGeneration !== this.dailymotionGeneration) return;
             if (!playerId) {
                 this.showExternalVideoMessage(
                     'Dailymotion requires a Player ID configured for your website. Add DAILYMOTION_PLAYER_ID to the server environment, then reload the room.',
@@ -530,7 +547,7 @@ class VideoPlayerManager {
                 );
                 return;
             }
-            await this.setupDailymotionPlayer(playerId, videoId, videoUrl);
+            await this.setupDailymotionPlayer(playerId, videoId, videoUrl, dailymotionGeneration);
             return;
         } else if (type === VIDEO_TYPES.TWITCH) {
             const path = parsedUrl.pathname.split('/').filter(Boolean);
@@ -615,7 +632,7 @@ class VideoPlayerManager {
         return this.dailymotionLibraryPromise;
     }
 
-    async setupDailymotionPlayer(playerId, videoId, videoUrl) {
+    async setupDailymotionPlayer(playerId, videoId, videoUrl, generation) {
         const dailymotionContainer = this.dom.get('dailymotion-player');
         const iframe = this.dom.get('video-player');
         const directVideo = this.dom.get('direct-video-player');
@@ -625,7 +642,8 @@ class VideoPlayerManager {
         directVideo.style.display = 'none';
 
         const dailymotion = await this.loadDailymotionLibrary(playerId);
-        if (this.currentVideoUrl !== videoUrl) return;
+        if (this.currentVideoUrl !== videoUrl || generation !== this.dailymotionGeneration) return;
+        await this.dailymotionDestroyPromise;
 
         const playerCreation = dailymotion.createPlayer('dailymotion-player', {
             video: videoId,
@@ -642,8 +660,8 @@ class VideoPlayerManager {
                 );
             })
         ]).finally(() => clearTimeout(creationTimeout));
-        if (this.currentVideoUrl !== videoUrl) {
-            dailymotion.destroy?.('dailymotion-player');
+        if (this.currentVideoUrl !== videoUrl || generation !== this.dailymotionGeneration) {
+            await this.destroyDailymotionInstance();
             return;
         }
 
@@ -1196,20 +1214,14 @@ class VideoPlayerManager {
     }
 
     cleanup() {
+        this.dailymotionGeneration++;
         this.stopAdminSync();
         this.stopListeningToYouTube();
         if (this.dailymotionPlayer) {
             this.dailymotionEventHandlers.forEach(([event, handler]) => {
                 this.dailymotionPlayer.off?.(event, handler);
             });
-            try {
-                const destroyResult = window.dailymotion?.destroy?.('dailymotion-player');
-                if (destroyResult && typeof destroyResult.catch === 'function') {
-                    destroyResult.catch((error) => console.error('Could not destroy Dailymotion player:', error));
-                }
-            } catch (error) {
-                console.error('Could not destroy Dailymotion player:', error);
-            }
+            this.destroyDailymotionInstance();
         }
         this.dailymotionEventHandlers = [];
         this.dailymotionPlayer = null;
@@ -1245,6 +1257,23 @@ class VideoPlayerManager {
             iframe.onload = null;
             iframe.src = 'about:blank';
         }
+    }
+
+    destroyDailymotionInstance() {
+        this.dailymotionPlayer = null;
+        try {
+            this.dailymotionDestroyPromise = Promise.resolve(
+                window.dailymotion?.destroy?.('dailymotion-player')
+            );
+        } catch (error) {
+            this.dailymotionDestroyPromise = Promise.reject(error);
+        }
+        this.dailymotionDestroyPromise = this.dailymotionDestroyPromise.catch((error) => {
+            console.error('Could not destroy Dailymotion player:', error);
+            throw error;
+        });
+        this.dailymotionDestroyPromise.catch(() => {});
+        return this.dailymotionDestroyPromise;
     }
 }
 
