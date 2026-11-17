@@ -184,8 +184,25 @@
                 <iframe id="video-player" src="" frameborder="0" class="video-player"
                     allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" 
                     allowfullscreen></iframe>
+                <div id="dailymotion-player" class="video-player dailymotion-player" aria-label="Dailymotion video player"></div>
             </div>
             
+            <div class="dailymotion-controls" id="dailymotion-controls" aria-label="Video controls" hidden>
+                <button type="button" class="dailymotion-control-button" id="dailymotion-play-toggle" aria-label="Play video">
+                    <i class="fas fa-play" id="dailymotion-play-icon" aria-hidden="true"></i>
+                </button>
+                <span class="dailymotion-time" id="dailymotion-time">0:00</span>
+                <input type="range" id="dailymotion-seek" class="dailymotion-seek" min="0" max="0" step="0.1" value="0" aria-label="Seek video" disabled>
+                <span class="dailymotion-time" id="dailymotion-duration">0:00</span>
+                <button type="button" class="dailymotion-control-button" id="dailymotion-mute-toggle" aria-label="Mute video">
+                    <i class="fas fa-volume-high" aria-hidden="true"></i>
+                </button>
+                <input type="range" id="dailymotion-volume" class="dailymotion-volume" min="0" max="1" step="0.05" value="1" aria-label="Video volume">
+                <button type="button" class="dailymotion-control-button" id="dailymotion-fullscreen" aria-label="Enter fullscreen">
+                    <i class="fas fa-expand" aria-hidden="true"></i>
+                </button>
+            </div>
+
             <!-- Video Controls -->
             <div class="video-controls">
                 <input type="text" class="video-url-input" id="video-url" 

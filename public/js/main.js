@@ -108,7 +108,10 @@ class DOMCache {
     cacheElements() {
         const elementIds = [
             'form', 'input', 'messages', 'username-modal', 'username-input', 'username-submit',
-            'video-player', 'direct-video-player', 'video-url', 'change-video',
+            'video-player', 'direct-video-player', 'dailymotion-player', 'video-url', 'change-video',
+            'dailymotion-controls', 'dailymotion-play-toggle', 'dailymotion-play-icon',
+            'dailymotion-time', 'dailymotion-seek', 'dailymotion-duration',
+            'dailymotion-mute-toggle', 'dailymotion-volume', 'dailymotion-fullscreen',
             'admin-controls', 'admin-notice', 'request-admin',
             'admin-request-modal', 'admin-request-message', 'accept-admin-request', 'reject-admin-request',
             'admin-play', 'admin-pause', 'admin-restart', 'admin-viewing-notice',
@@ -378,6 +381,13 @@ class VideoPlayerManager {
         this.vimeoPlayer = null;
         this.currentVideoUrl = '';
         this.dailymotionPlayerIdPromise = null;
+        this.dailymotionPlayer = null;
+        this.dailymotionLibraryPromise = null;
+        this.dailymotionEventHandlers = [];
+        this.isDailymotionSeeking = false;
+        this.lastDailymotionVolume = 1;
+        this.dailymotionIgnoreEventsUntil = 0;
+        this.initializeDailymotionControls();
     }
 
     initialize(videoUrl) {
@@ -420,13 +430,20 @@ class VideoPlayerManager {
                 this.setupDirectVideoPlayer(videoUrl);
                 break;
             case VIDEO_TYPES.VIMEO:
-            case VIDEO_TYPES.DAILYMOTION:
             case VIDEO_TYPES.FACEBOOK:
             case VIDEO_TYPES.TWITCH:
                 this.setupProviderEmbed(videoUrl, this.appState.currentVideoType).catch((error) => {
                     console.error('Failed to configure video embed:', error);
                     if (this.currentVideoUrl === videoUrl) {
                         this.showUnsupportedVideoMessage('Could not load the video player configuration. Please try again.');
+                    }
+                });
+                break;
+            case VIDEO_TYPES.DAILYMOTION:
+                this.setupProviderEmbed(videoUrl, this.appState.currentVideoType).catch((error) => {
+                    console.error('Failed to configure Dailymotion player:', error);
+                    if (this.currentVideoUrl === videoUrl) {
+                        this.showUnsupportedVideoMessage('Could not load the Dailymotion player. Check the Player ID and allowed domain settings.');
                     }
                 });
                 break;
@@ -511,8 +528,8 @@ class VideoPlayerManager {
                 );
                 return;
             }
-            const params = new URLSearchParams({ video: videoId });
-            embedUrl = `https://geo.dailymotion.com/player/${encodeURIComponent(playerId)}.html?${params}`;
+            await this.setupDailymotionPlayer(playerId, videoId, videoUrl);
+            return;
         } else if (type === VIDEO_TYPES.TWITCH) {
             const path = parsedUrl.pathname.split('/').filter(Boolean);
             if (!path.length) {
@@ -556,6 +573,251 @@ class VideoPlayerManager {
                 });
         }
         return this.dailymotionPlayerIdPromise;
+    }
+
+    loadDailymotionLibrary(playerId) {
+        if (window.dailymotion?.createPlayer) return Promise.resolve(window.dailymotion);
+        if (this.dailymotionLibraryPromise) return this.dailymotionLibraryPromise;
+
+        this.dailymotionLibraryPromise = new Promise((resolve, reject) => {
+            let settled = false;
+            const finish = (error) => {
+                if (settled) return;
+                settled = true;
+                clearTimeout(timeout);
+                if (error) reject(error);
+                else resolve(window.dailymotion);
+            };
+            const timeout = setTimeout(() => finish(new Error('Dailymotion player library timed out')), 15000);
+            const dailymotion = window.dailymotion || {};
+            dailymotion.onScriptLoaded = () => {
+                if (window.dailymotion?.createPlayer) finish();
+                else finish(new Error('Dailymotion player library did not initialize'));
+            };
+            window.dailymotion = dailymotion;
+
+            const script = document.createElement('script');
+            script.async = true;
+            script.src = `https://geo.dailymotion.com/libs/player/${encodeURIComponent(playerId)}.js`;
+            script.onload = () => {
+                if (window.dailymotion?.createPlayer) finish();
+                else finish(new Error('Dailymotion player API is unavailable'));
+            };
+            script.onerror = () => finish(new Error('Could not load the Dailymotion player library'));
+            document.head.appendChild(script);
+        }).catch((error) => {
+            this.dailymotionLibraryPromise = null;
+            throw error;
+        });
+
+        return this.dailymotionLibraryPromise;
+    }
+
+    async setupDailymotionPlayer(playerId, videoId, videoUrl) {
+        const dailymotionContainer = this.dom.get('dailymotion-player');
+        const iframe = this.dom.get('video-player');
+        const directVideo = this.dom.get('direct-video-player');
+        dailymotionContainer.replaceChildren();
+        dailymotionContainer.style.display = 'block';
+        iframe.style.display = 'none';
+        directVideo.style.display = 'none';
+
+        const dailymotion = await this.loadDailymotionLibrary(playerId);
+        if (this.currentVideoUrl !== videoUrl) return;
+
+        const player = await dailymotion.createPlayer('dailymotion-player', {
+            video: videoId,
+            params: { autoplay: false },
+            referrerPolicy: 'strict-origin-when-cross-origin'
+        });
+        if (this.currentVideoUrl !== videoUrl) {
+            dailymotion.destroy?.('dailymotion-player');
+            return;
+        }
+
+        this.dailymotionPlayer = player;
+        this.player = {
+            getCurrentTime: () => player.getState().then((state) => Number(state.videoTime) || 0),
+            getPlayerState: () => player.getState().then((state) =>
+                state.playerIsPlaying ? PLAYER_STATES.PLAYING : PLAYER_STATES.PAUSED
+            ),
+            seekTo: (time) => this.runDailymotionCommand('seek', time),
+            playVideo: () => this.runDailymotionCommand('play'),
+            pauseVideo: () => this.runDailymotionCommand('pause')
+        };
+        this.bindDailymotionEvents(player, dailymotion.events || {});
+        this.dom.get('dailymotion-controls').hidden = false;
+        this.refreshDailymotionControls();
+        if (this.appState.isAdmin) this.startAdminSync();
+    }
+
+    bindDailymotionEvents(player, events) {
+        const bind = (name, handler) => {
+            const event = events[name];
+            if (!event) return;
+            player.on(event, handler);
+            this.dailymotionEventHandlers.push([event, handler]);
+        };
+        const updateControls = (state) => {
+            this.updateDailymotionControls(state);
+            if (!state?.videoTime && !state?.videoDuration) this.refreshDailymotionControls();
+        };
+
+        bind('VIDEO_PLAY', (state) => {
+            updateControls(state);
+            this.reportDailymotionPlayback('play', state);
+        });
+        bind('VIDEO_PAUSE', (state) => {
+            updateControls(state);
+            this.reportDailymotionPlayback('pause', state);
+        });
+        bind('VIDEO_SEEKEND', (state) => {
+            updateControls(state);
+            this.reportDailymotionPlayback('seek', state);
+        });
+        bind('VIDEO_TIMECHANGE', updateControls);
+        bind('VIDEO_DURATIONCHANGE', updateControls);
+        bind('PLAYER_VOLUMECHANGE', updateControls);
+        bind('PLAYER_PRESENTATIONMODECHANGE', updateControls);
+    }
+
+    async reportDailymotionPlayback(kind, state) {
+        if (this.isIgnoringDailymotionEvents() || !this.dailymotionPlayer) return;
+        try {
+            const playerState = state?.videoTime !== undefined ? state : await this.dailymotionPlayer.getState();
+            if (this.isIgnoringDailymotionEvents()) return;
+            const time = Number(playerState.videoTime);
+            if (!Number.isFinite(time)) return;
+            this.socket.emit(`video ${kind}`, time);
+            if (this.appState.isAdmin && (kind === 'play' || kind === 'pause')) {
+                this.socket.emit('admin action', kind);
+            }
+        } catch (error) {
+            console.error(`Could not read Dailymotion playback state for ${kind}:`, error);
+        }
+    }
+
+    runDailymotionCommand(method, ...args) {
+        if (!this.dailymotionPlayer || typeof this.dailymotionPlayer[method] !== 'function') {
+            console.error(`Dailymotion player does not support ${method}`);
+            return;
+        }
+        if (this.appState.ignoreEvents) {
+            this.dailymotionIgnoreEventsUntil = Date.now() + 1000;
+        }
+        try {
+            const result = this.dailymotionPlayer[method](...args);
+            if (result && typeof result.catch === 'function') {
+                result.catch((error) => console.error(`Dailymotion ${method} failed:`, error));
+            }
+            return result;
+        } catch (error) {
+            console.error(`Dailymotion ${method} failed:`, error);
+        }
+    }
+
+    isIgnoringDailymotionEvents() {
+        return this.appState.ignoreEvents || Date.now() < this.dailymotionIgnoreEventsUntil;
+    }
+
+    initializeDailymotionControls() {
+        const playToggle = this.dom.get('dailymotion-play-toggle');
+        const seek = this.dom.get('dailymotion-seek');
+        const volume = this.dom.get('dailymotion-volume');
+        const muteToggle = this.dom.get('dailymotion-mute-toggle');
+        const fullscreen = this.dom.get('dailymotion-fullscreen');
+
+        playToggle?.addEventListener('click', async () => {
+            if (!this.dailymotionPlayer) return;
+            try {
+                const state = await this.dailymotionPlayer.getState();
+                this.runDailymotionCommand(state.playerIsPlaying ? 'pause' : 'play');
+            } catch (error) {
+                console.error('Could not toggle Dailymotion playback:', error);
+            }
+        });
+        seek?.addEventListener('pointerdown', () => { this.isDailymotionSeeking = true; });
+        seek?.addEventListener('input', () => {
+            this.isDailymotionSeeking = true;
+            this.dom.get('dailymotion-time').textContent = this.formatVideoTime(Number(seek.value));
+        });
+        seek?.addEventListener('change', () => {
+            this.isDailymotionSeeking = false;
+            this.runDailymotionCommand('seek', Number(seek.value));
+        });
+        volume?.addEventListener('input', () => {
+            const level = Number(volume.value);
+            if (level > 0) this.lastDailymotionVolume = level;
+            this.runDailymotionCommand('setVolume', level);
+        });
+        muteToggle?.addEventListener('click', async () => {
+            if (!this.dailymotionPlayer) return;
+            try {
+                const state = await this.dailymotionPlayer.getState();
+                const volumeLevel = Number(state.playerVolume) || this.lastDailymotionVolume;
+                const nextVolume = volumeLevel > 0 ? 0 : this.lastDailymotionVolume || 1;
+                this.runDailymotionCommand('setVolume', nextVolume);
+            } catch (error) {
+                console.error('Could not change Dailymotion volume:', error);
+            }
+        });
+        fullscreen?.addEventListener('click', () => this.runDailymotionCommand('setFullscreen', true));
+    }
+
+    async refreshDailymotionControls() {
+        if (!this.dailymotionPlayer) return;
+        try {
+            const state = await this.dailymotionPlayer.getState();
+            if (this.dailymotionPlayer) this.updateDailymotionControls(state);
+        } catch (error) {
+            console.error('Could not refresh Dailymotion controls:', error);
+        }
+    }
+
+    updateDailymotionControls(state = {}) {
+        const playIcon = this.dom.get('dailymotion-play-icon');
+        const playButton = this.dom.get('dailymotion-play-toggle');
+        const seek = this.dom.get('dailymotion-seek');
+        const volume = this.dom.get('dailymotion-volume');
+        const muteIcon = this.dom.get('dailymotion-mute-toggle')?.querySelector('i');
+        const currentTime = Number(state.videoTime);
+        const duration = Number(state.videoDuration);
+        const volumeLevel = Number(state.playerVolume);
+
+        if (Number.isFinite(duration) && duration > 0) {
+            seek.max = String(duration);
+            seek.disabled = false;
+            this.dom.get('dailymotion-duration').textContent = this.formatVideoTime(duration);
+        }
+        if (Number.isFinite(currentTime) && currentTime >= 0) {
+            if (!this.isDailymotionSeeking) seek.value = String(currentTime);
+            this.dom.get('dailymotion-time').textContent = this.formatVideoTime(currentTime);
+        }
+        if (Number.isFinite(volumeLevel)) {
+            volume.value = String(volumeLevel);
+            if (volumeLevel > 0) this.lastDailymotionVolume = volumeLevel;
+            muteIcon?.classList.toggle('fa-volume-xmark', volumeLevel === 0);
+            muteIcon?.classList.toggle('fa-volume-high', volumeLevel > 0);
+            this.dom.get('dailymotion-mute-toggle').setAttribute('aria-label', volumeLevel > 0 ? 'Mute video' : 'Unmute video');
+        }
+        if (typeof state.playerIsPlaying === 'boolean') {
+            playIcon?.classList.toggle('fa-play', !state.playerIsPlaying);
+            playIcon?.classList.toggle('fa-pause', state.playerIsPlaying);
+            playButton?.setAttribute('aria-label', state.playerIsPlaying ? 'Pause video' : 'Play video');
+        }
+        const fullscreenButton = this.dom.get('dailymotion-fullscreen');
+        const isFullscreen = state.playerPresentationMode === 'fullscreen';
+        fullscreenButton?.setAttribute('aria-label', isFullscreen ? 'Exit fullscreen' : 'Enter fullscreen');
+        fullscreenButton?.querySelector('i')?.classList.toggle('fa-compress', isFullscreen);
+        fullscreenButton?.querySelector('i')?.classList.toggle('fa-expand', !isFullscreen);
+    }
+
+    formatVideoTime(seconds) {
+        if (!Number.isFinite(seconds) || seconds < 0) return '0:00';
+        const totalSeconds = Math.floor(seconds);
+        const minutes = Math.floor(totalSeconds / 60);
+        const remainingSeconds = String(totalSeconds % 60).padStart(2, '0');
+        return `${minutes}:${remainingSeconds}`;
     }
 
     setupExternalIframe(videoUrl) {
@@ -924,6 +1186,35 @@ class VideoPlayerManager {
     cleanup() {
         this.stopAdminSync();
         this.stopListeningToYouTube();
+        if (this.dailymotionPlayer) {
+            this.dailymotionEventHandlers.forEach(([event, handler]) => {
+                this.dailymotionPlayer.off?.(event, handler);
+            });
+            try {
+                const destroyResult = window.dailymotion?.destroy?.('dailymotion-player');
+                if (destroyResult && typeof destroyResult.catch === 'function') {
+                    destroyResult.catch((error) => console.error('Could not destroy Dailymotion player:', error));
+                }
+            } catch (error) {
+                console.error('Could not destroy Dailymotion player:', error);
+            }
+        }
+        this.dailymotionEventHandlers = [];
+        this.dailymotionPlayer = null;
+        const dailymotionContainer = this.dom.get('dailymotion-player');
+        if (dailymotionContainer) {
+            dailymotionContainer.replaceChildren();
+            dailymotionContainer.style.display = 'none';
+        }
+        const dailymotionControls = this.dom.get('dailymotion-controls');
+        if (dailymotionControls) dailymotionControls.hidden = true;
+        this.isDailymotionSeeking = false;
+        const dailymotionSeek = this.dom.get('dailymotion-seek');
+        if (dailymotionSeek) {
+            dailymotionSeek.value = '0';
+            dailymotionSeek.max = '0';
+            dailymotionSeek.disabled = true;
+        }
         const directVideo = this.dom.get('direct-video-player');
         if (directVideo) {
             directVideo.onplay = null;

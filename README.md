@@ -5,6 +5,7 @@ A synchronized video watching platform with real-time chat, voice communication,
 ## Features
 
 - **Multiple Video Sources**: Embed YouTube, Dailymotion, Vimeo, Twitch, Facebook videos, and direct video files. Other sites work when they allow iframe embedding.
+- **Dailymotion Controls**: Use the in-app play/pause, seek, volume, mute, and fullscreen controls.
 - **Netflix limitation**: Netflix blocks playback inside other websites, so open Netflix separately; this app cannot synchronize its playback controls.
 - **Real-time Chat**: Text messaging with user authentication and guest mode
 - **Voice Chat**: WebRTC-based voice communication

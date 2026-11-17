@@ -236,7 +236,8 @@ body {
 
 /* Ensure video players fill container properly */
 #video-player,
-#direct-video-player {
+#direct-video-player,
+#dailymotion-player {
     position: absolute;
     top: 0;
     left: 0;
@@ -246,6 +247,85 @@ body {
     border-radius: var(--radius-lg);
     background: #000;
     object-fit: contain;
+}
+
+#dailymotion-player {
+    display: none;
+}
+
+.dailymotion-controls {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    width: 100%;
+    padding: 10px 14px;
+    color: var(--text-primary);
+    background: var(--bg-card);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+}
+
+.dailymotion-controls[hidden] {
+    display: none;
+}
+
+.dailymotion-control-button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 36px;
+    width: 36px;
+    height: 36px;
+    color: var(--text-primary);
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: 50%;
+    cursor: pointer;
+}
+
+.dailymotion-control-button:hover:not(:disabled) {
+    color: white;
+    background: var(--primary-color);
+    border-color: var(--primary-color);
+}
+
+.dailymotion-control-button:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.dailymotion-time {
+    min-width: 38px;
+    color: var(--text-secondary);
+    font-size: 12px;
+    font-variant-numeric: tabular-nums;
+    text-align: center;
+}
+
+.dailymotion-seek {
+    flex: 1;
+    min-width: 50px;
+}
+
+.dailymotion-volume {
+    flex: 0 1 90px;
+    min-width: 55px;
+}
+
+.dailymotion-controls input[type="range"] {
+    accent-color: var(--primary-color);
+    cursor: pointer;
+}
+
+@media (max-width: 520px) {
+    .dailymotion-controls {
+        gap: 7px;
+        padding: 8px;
+    }
+
+    .dailymotion-volume {
+        max-width: 60px;
+    }
 }
 
 /* Fix for when no video is loaded */
