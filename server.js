@@ -345,6 +345,15 @@ function detectVideoType(url) {
     if (!url) return 'unknown';
     
     url = url.trim();
+
+    try {
+        const host = new URL(url).hostname.toLowerCase().replace(/^www\./, '');
+        if (host === 'mega.nz' || host.endsWith('.mega.nz') || host === 'mega.co.nz' || host.endsWith('.mega.co.nz')) {
+            return 'mega';
+        }
+    } catch (error) {
+        // Continue through existing URL detection for malformed links.
+    }
     
     // YouTube
     if (url.includes('youtube.com/watch') || url.includes('youtu.be/')) {

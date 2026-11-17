@@ -21,6 +21,7 @@ const VIDEO_TYPES = {
     TWITCH: 'twitch',
     DAILYMOTION: 'dailymotion',
     NETFLIX: 'netflix',
+    MEGA: 'mega',
     IFRAME: 'iframe'
 };
 
@@ -163,6 +164,7 @@ class Utils {
             if (isHost('vimeo.com')) return VIDEO_TYPES.VIMEO;
             if (isHost('dailymotion.com') || isHost('dai.ly')) return VIDEO_TYPES.DAILYMOTION;
             if (isHost('netflix.com')) return VIDEO_TYPES.NETFLIX;
+            if (isHost('mega.nz') || isHost('mega.co.nz')) return VIDEO_TYPES.MEGA;
             if (isHost('twitch.tv')) return VIDEO_TYPES.TWITCH;
             if (isHost('facebook.com') && /\/(videos|watch|reel)\b/i.test(parsedUrl.pathname)) return VIDEO_TYPES.FACEBOOK;
             if (/\.(mp4|webm|ogg|ogv|mov|avi|mkv|flv|wmv|m4v)$/i.test(parsedUrl.pathname)) return VIDEO_TYPES.DIRECT;
@@ -469,6 +471,9 @@ class VideoPlayerManager {
                     if (this.dailymotionSetupPromise === setupPromise) this.dailymotionSetupPromise = null;
                 });
                 break;
+            case VIDEO_TYPES.MEGA:
+                this.setupMegaEmbed(videoUrl);
+                break;
             case VIDEO_TYPES.NETFLIX:
                 this.showExternalVideoMessage(
                     'Netflix blocks playback inside other websites. Open Netflix directly; everyone will need their own Netflix access, and playback controls cannot sync through this room.',
@@ -484,6 +489,26 @@ class VideoPlayerManager {
                     'This link is not a valid web address. Use an HTTP or HTTPS video link.'
                 );
         }
+    }
+
+    setupMegaEmbed(videoUrl) {
+        let parsedUrl;
+        try {
+            parsedUrl = new URL(videoUrl);
+        } catch (error) {
+            this.showUnsupportedVideoMessage('This MEGA link is not valid.');
+            return;
+        }
+
+        const host = parsedUrl.hostname.toLowerCase().replace(/^www\./, '');
+        const fileId = parsedUrl.pathname.match(/^\/(?:file|embed)\/([a-zA-Z0-9_-]+)\/?$/)?.[1];
+        const fileKey = parsedUrl.hash.slice(1);
+        if (!['mega.nz', 'mega.co.nz'].includes(host) || !fileId || !fileKey) {
+            this.showUnsupportedVideoMessage('Paste a MEGA file link that includes its decryption key.');
+            return;
+        }
+
+        this.loadIframe(`https://mega.nz/embed/${fileId}#${fileKey}`);
     }
 
     setupYouTubePlayer(videoUrl) {
