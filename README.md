@@ -169,7 +169,9 @@ MAX_USERS_PER_ROOM=50
 INVITE_EXPIRY_HOURS=24
 ```
 
-To enable Dailymotion embeds, create a Player in [Dailymotion Studio](https://www.dailymotion.com/partner/embed/players), set its allowed embed domain to your site's domain, and set `DAILYMOTION_PLAYER_ID` to that Player's ID. Restart the server after changing the environment variable.
+To enable Dailymotion embeds, create a Player in [Dailymotion Studio](https://www.dailymotion.com/partner/embed/players) (*Embeds → Players → Create player*), set its allowed embed domain to your site's domain, and set `DAILYMOTION_PLAYER_ID` to that Player's ID. Restart the server after changing the environment variable.
+
+Dailymotion only lets accounts on its **Edge** plan create Players; ordinary user and creator accounts cannot. Your account or channel ID (the `x…` code in Studio's address, e.g. `/partner/x6nx3ry/`) is not a Player ID. Dailymotion refuses to embed a video without a valid Player ID, so without one the room shows an **Open on Dailymotion** link instead of the video. If `DAILYMOTION_PLAYER_ID` is set to something that is not a Player, the room says so right away.
 
 ## Docker Configuration
 

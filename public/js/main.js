@@ -458,9 +458,12 @@ class VideoPlayerManager {
                 setupPromise.catch((error) => {
                     console.error('Failed to configure Dailymotion player:', error);
                     if (this.currentVideoUrl === videoUrl) {
-                        const detail = typeof error?.message === 'string' ? error.message.slice(0, 180) : '';
-                        const reason = detail ? ` Details: ${detail}` : '';
-                        this.showUnsupportedVideoMessage(`Could not load the Dailymotion player. Check the Player ID and allowed domain settings.${reason}`);
+                        this.hideDailymotionContainer();
+                        this.showExternalVideoMessage(
+                            'The Dailymotion player did not load here. Open the video on Dailymotion instead.',
+                            videoUrl,
+                            'Open on Dailymotion'
+                        );
                     }
                 }).finally(() => {
                     if (this.dailymotionSetupPromise === setupPromise) this.dailymotionSetupPromise = null;
@@ -547,6 +550,17 @@ class VideoPlayerManager {
                 );
                 return;
             }
+            const playerExists = await this.dailymotionPlayerExists(playerId);
+            if (this.currentVideoUrl !== videoUrl || dailymotionGeneration !== this.dailymotionGeneration) return;
+            if (!playerExists) {
+                this.hideDailymotionContainer();
+                this.showExternalVideoMessage(
+                    'Dailymotion videos cannot play here: the Player ID set on the server (DAILYMOTION_PLAYER_ID) is not a Dailymotion Player. Open the video on Dailymotion instead.',
+                    videoUrl,
+                    'Open on Dailymotion'
+                );
+                return;
+            }
             await this.setupDailymotionPlayer(playerId, videoId, videoUrl, dailymotionGeneration);
             return;
         } else if (type === VIDEO_TYPES.TWITCH) {
@@ -592,6 +606,28 @@ class VideoPlayerManager {
                 });
         }
         return this.dailymotionPlayerIdPromise;
+    }
+
+    // Dailymotion answers 404 for an ID that is not a Player (for example an account ID).
+    // Any other outcome, including a network error, lets the player try to load.
+    dailymotionPlayerExists(playerId) {
+        if (!this.dailymotionPlayerCheck || this.dailymotionPlayerCheck.id !== playerId) {
+            const promise = fetch(`https://geo.dailymotion.com/player/${encodeURIComponent(playerId)}.json`)
+                .then((response) => response.status !== 404)
+                .catch(() => true);
+            this.dailymotionPlayerCheck = { id: playerId, promise };
+        }
+        return this.dailymotionPlayerCheck.promise;
+    }
+
+    hideDailymotionContainer() {
+        const container = this.dom.get('dailymotion-player');
+        if (container) {
+            container.replaceChildren();
+            container.style.display = 'none';
+        }
+        const controls = this.dom.get('dailymotion-controls');
+        if (controls) controls.hidden = true;
     }
 
     loadDailymotionLibrary(playerId) {
